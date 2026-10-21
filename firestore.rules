@@ -1,0 +1,666 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // 1. users/{userId}
+    //    - id: string (1-100 chars, immutable on update)
+    //    - name: string (1-100 chars)
+    //    - email: string (5-150 chars, valid email format)
+    //    - phone: string (7-20 chars)
+    //    - role: string ('admin' | 'manager' | 'staff', immutable for self-update)
+    //    - designation: string (1-100 chars)
+    //    - avatarUrl: string (optional, 0-500000 chars)
+    //    - joinedDate: string (1-50 chars)
+    //    - basicSalary: number (>= 0, immutable for self-update)
+    //    - monthlyTarget: number (>= 0, immutable for self-update)
+    //    - isActive: bool
+    //    - hasFaceRegistered: bool (optional)
+    //    - faceRegistrationDate: string (optional, 0-50 chars)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 2. attendance/{attendanceId}
+    //    - id: string (1-100 chars)
+    //    - userId: string (1-100 chars, must match request.auth.uid on create)
+    //    - userName: string (1-100 chars)
+    //    - userRole: string ('admin' | 'manager' | 'staff')
+    //    - date: string (1-20 chars, YYYY-MM-DD)
+    //    - punchInTime: string (optional, 0-50 chars)
+    //    - punchInCoords: map (optional, latitude, longitude, distanceMeters)
+    //    - punchOutTime: string (optional, 0-50 chars)
+    //    - punchOutCoords: map (optional, latitude, longitude, distanceMeters)
+    //    - status: string ('present' | 'late' | 'half_day' | 'early_exit' | 'absent')
+    //    - totalHours: number (>= 0)
+    //    - isLate: bool
+    //    - isEarlyExit: bool
+    //    - notes: string (optional, 0-1000 chars)
+    //    - verificationMethod: string (optional, 'face_recognition' | 'manual_override')
+    //    - faceVerificationScore: number (optional)
+    //    - faceLivenessScore: number (optional)
+    //    - faceVerificationTokenId: string (optional, 0-100 chars)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 3. leads/{leadId}
+    //    - id: string (1-100 chars)
+    //    - name: string (1-100 chars)
+    //    - phone: string (7-20 chars)
+    //    - alternatePhone: string (optional, 0-20 chars)
+    //    - interestedBrand: string (1-50 chars)
+    //    - interestedModel: string (1-100 chars)
+    //    - budget: number (>= 0)
+    //    - remarks: string (0-1000 chars)
+    //    - status: string ('new' | 'follow_up' | 'interested' | 'purchased' | 'lost')
+    //    - followUpDate: string (optional, 0-50 chars)
+    //    - followUpTime: string (optional, 0-50 chars)
+    //    - createdBy: string (1-100 chars, immutable on update)
+    //    - createdByName: string (1-100 chars)
+    //    - createdAt: string (1-50 chars, immutable on update)
+    //    - updatedAt: string (1-50 chars)
+    //    - history: list (max 100 items)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 4. mobile_prices/{priceId}
+    //    - id: string (1-100 chars)
+    //    - brand: string (1-50 chars)
+    //    - model: string (1-100 chars)
+    //    - ram: string (1-30 chars)
+    //    - storage: string (1-30 chars)
+    //    - purchasePrice: number (>= 0)
+    //    - sellingPrice: number (>= 0)
+    //    - inStock: bool (optional)
+    //    - updatedAt: string (1-50 chars)
+    //    - priceHistory: list (max 100 items)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 5. second_hand_purchases/{purchaseId}
+    //    - id: string (1-100 chars)
+    //    - customerName: string (1-100 chars)
+    //    - phone: string (7-20 chars)
+    //    - alternatePhone: string (optional, 0-20 chars)
+    //    - address: string (1-250 chars)
+    //    - aadhaarNumber: string (4-20 chars)
+    //    - aadhaarFrontUri / aadhaarBackUri / aadhaarPhotoFront / aadhaarPhotoBack / aadhaarCardPhotoUri: string (optional, 0-500000 chars)
+    //    - customerPhotoUri / billImageUri: string (optional, 0-500000 chars)
+    //    - brand: string (1-50 chars)
+    //    - model: string (1-100 chars)
+    //    - ram / storage: string (optional, 0-30 chars)
+    //    - imei: string (5-30 chars)
+    //    - condition: string (1-50 chars)
+    //    - purchaseAmount: number (>= 0)
+    //    - digitalSignatureUri: string (1-500000 chars)
+    //    - purchaseDate: string (1-50 chars)
+    //    - purchaseTime: string (1-50 chars)
+    //    - purchasedByStaffId: string (1-100 chars)
+    //    - purchasedByStaffName: string (1-100 chars)
+    //    - status: string ('in_stock' | 'sold')
+    //    - notes: string (optional, 0-1000 chars)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 6. second_hand_sales/{saleId}
+    //    - id: string (1-100 chars)
+    //    - purchaseRecordId: string (optional, 0-100 chars)
+    //    - buyerName: string (1-100 chars)
+    //    - phone: string (7-20 chars)
+    //    - alternatePhone: string (optional, 0-20 chars)
+    //    - address: string (1-250 chars)
+    //    - aadhaarNumber: string (4-20 chars)
+    //    - aadhaarPhotoUri / buyerPhotoUri: string (optional, 0-500000 chars)
+    //    - brand: string (1-50 chars)
+    //    - model: string (1-100 chars)
+    //    - ram / storage: string (optional, 0-30 chars)
+    //    - imei: string (5-30 chars)
+    //    - sellingAmount: number (>= 0)
+    //    - purchaseAmount: number (>= 0)
+    //    - profitAmount: number
+    //    - marginPercent: number
+    //    - invoiceNumber: string (1-100 chars)
+    //    - digitalSignatureUri: string (1-500000 chars)
+    //    - saleDate: string (1-50 chars)
+    //    - saleTime: string (1-50 chars)
+    //    - soldByStaffId: string (1-100 chars)
+    //    - soldByStaffName: string (1-100 chars)
+    //    - paymentMethod: string ('Cash' | 'UPI' | 'Card' | 'Bank Transfer')
+    //    - warrantyMonths: number (optional, >= 0)
+    //    - notes: string (optional, 0-1000 chars)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 7. sales_targets/{targetId}
+    //    - id: string (1-100 chars)
+    //    - staffId: string (1-100 chars)
+    //    - staffName: string (1-100 chars)
+    //    - month: string (1-20 chars, e.g. YYYY-MM)
+    //    - targetAmount: number (>= 0)
+    //    - achievedAmount: number (>= 0)
+    //    - targetUnits: number (>= 0)
+    //    - achievedUnits: number (>= 0)
+    //    - incentivePercent: number (>= 0)
+    //    - calculatedIncentive: number (>= 0)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 8. salary_slips/{slipId}
+    //    - id: string (1-100 chars)
+    //    - staffId: string (1-100 chars)
+    //    - staffName: string (1-100 chars)
+    //    - designation: string (1-100 chars)
+    //    - month: string (1-50 chars)
+    //    - monthKey: string (1-20 chars, e.g. YYYY-MM)
+    //    - basicSalary: number (>= 0)
+    //    - salesIncentive: number (>= 0)
+    //    - attendanceBonus: number (>= 0)
+    //    - deductions: number (>= 0)
+    //    - netSalary: number (>= 0)
+    //    - totalWorkingDays: number (>= 0)
+    //    - presentDays: number (>= 0)
+    //    - lateDays: number (>= 0)
+    //    - salesAchieved: number (>= 0)
+    //    - generatedDate: string (1-50 chars)
+    //    - isPaid: bool
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 9. notifications/{notificationId}
+    //    - id: string (1-100 chars)
+    //    - title: string (1-150 chars)
+    //    - body: string (1-500 chars)
+    //    - type: string ('follow_up' | 'attendance' | 'lead' | 'purchase' | 'sale' | 'target')
+    //    - timestamp: string (1-50 chars)
+    //    - read: bool
+    //    - relatedId: string (optional, 0-100 chars)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 10. shop_config/{configId}
+    //    - shopName: string (1-100 chars)
+    //    - tagline: string (0-150 chars)
+    //    - shopAddress: string (1-250 chars)
+    //    - phone: string (7-25 chars)
+    //    - alternatePhone: string (0-25 chars)
+    //    - email: string (5-150 chars)
+    //    - gstNumber: string (0-30 chars)
+    //    - latitude: number
+    //    - longitude: number
+    //    - allowedRadiusMeters: number (>= 0)
+    //    - openingTime: string (1-20 chars)
+    //    - closingTime: string (1-20 chars)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // 11. _connection_test/{testDocId}
+    //    - test: bool
+    //    - source: string (optional, 0-100 chars)
+    //    - testedAt: string (optional, 0-50 chars)
+    //    - _syncedAt: string (optional, 0-50 chars)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function userDocExists() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        ('role' in request.auth.token && request.auth.token.role == 'admin') ||
+        ('email' in request.auth.token && request.auth.token.email == 'admin@parthmobile.com') ||
+        (userDocExists() && ('role' in getUserData()) && getUserData().role == 'admin')
+      );
+    }
+
+    function isManagerOrAdmin() {
+      return isAuthenticated() && (
+        isAdmin() ||
+        ('role' in request.auth.token && request.auth.token.role in ['admin', 'manager']) ||
+        (userDocExists() && ('role' in getUserData()) && getUserData().role in ['admin', 'manager'])
+      );
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, mapData, minLen, maxLen) {
+      return !(field in mapData) ||
+             (mapData[field] is string && mapData[field].size() >= minLen && mapData[field].size() <= maxLen);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.size() >= 5 && email.size() <= 150 &&
+             email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    }
+
+    // ===============================================================
+    // Domain Validators (Validator Function Pattern)
+    // ===============================================================
+
+    function isValidUser(data) {
+      let allowed = ['id', 'name', 'email', 'phone', 'role', 'designation', 'avatarUrl', 'joinedDate', 'basicSalary', 'monthlyTarget', 'isActive', 'hasFaceRegistered', 'faceRegistrationDate', '_syncedAt'];
+      let required = ['id', 'name', 'email', 'phone', 'role', 'designation', 'joinedDate', 'basicSalary', 'monthlyTarget', 'isActive'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.name, 1, 100) &&
+             isValidEmail(data.email) &&
+             isValidString(data.phone, 7, 20) &&
+             data.role in ['admin', 'manager', 'staff'] &&
+             isValidString(data.designation, 1, 100) &&
+             isValidString(data.joinedDate, 1, 50) &&
+             data.basicSalary is number && data.basicSalary >= 0 &&
+             data.monthlyTarget is number && data.monthlyTarget >= 0 &&
+             data.isActive is bool &&
+             isValidOptionalString('avatarUrl', data, 0, 500000) &&
+             (!('hasFaceRegistered' in data) || data.hasFaceRegistered is bool) &&
+             isValidOptionalString('faceRegistrationDate', data, 0, 50) &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidAttendance(data) {
+      let allowed = ['id', 'userId', 'userName', 'userRole', 'date', 'punchInTime', 'punchInCoords', 'punchOutTime', 'punchOutCoords', 'status', 'totalHours', 'isLate', 'isEarlyExit', 'notes', 'verificationMethod', 'faceVerificationScore', 'faceLivenessScore', 'faceVerificationTokenId', '_syncedAt'];
+      let required = ['id', 'userId', 'userName', 'userRole', 'date', 'status', 'totalHours', 'isLate', 'isEarlyExit'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.userId, 1, 100) &&
+             isValidString(data.userName, 1, 100) &&
+             data.userRole in ['admin', 'manager', 'staff'] &&
+             isValidString(data.date, 1, 20) &&
+             data.status in ['present', 'late', 'half_day', 'early_exit', 'absent'] &&
+             data.totalHours is number && data.totalHours >= 0 &&
+             data.isLate is bool &&
+             data.isEarlyExit is bool &&
+             isValidOptionalString('punchInTime', data, 0, 50) &&
+             (!('punchInCoords' in data) || data.punchInCoords is map) &&
+             isValidOptionalString('punchOutTime', data, 0, 50) &&
+             (!('punchOutCoords' in data) || data.punchOutCoords is map) &&
+             isValidOptionalString('notes', data, 0, 1000) &&
+             (!('verificationMethod' in data) || data.verificationMethod in ['face_recognition', 'manual_override']) &&
+             (!('faceVerificationScore' in data) || data.faceVerificationScore is number) &&
+             (!('faceLivenessScore' in data) || data.faceLivenessScore is number) &&
+             isValidOptionalString('faceVerificationTokenId', data, 0, 100) &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidLead(data) {
+      let allowed = ['id', 'name', 'phone', 'alternatePhone', 'interestedBrand', 'interestedModel', 'budget', 'remarks', 'status', 'followUpDate', 'followUpTime', 'createdBy', 'createdByName', 'createdAt', 'updatedAt', 'history', '_syncedAt'];
+      let required = ['id', 'name', 'phone', 'interestedBrand', 'interestedModel', 'budget', 'remarks', 'status', 'createdBy', 'createdByName', 'createdAt', 'updatedAt', 'history'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.name, 1, 100) &&
+             isValidString(data.phone, 7, 20) &&
+             isValidOptionalString('alternatePhone', data, 0, 20) &&
+             isValidString(data.interestedBrand, 1, 50) &&
+             isValidString(data.interestedModel, 1, 100) &&
+             data.budget is number && data.budget >= 0 &&
+             isValidString(data.remarks, 0, 1000) &&
+             data.status in ['new', 'follow_up', 'interested', 'purchased', 'lost'] &&
+             isValidOptionalString('followUpDate', data, 0, 50) &&
+             isValidOptionalString('followUpTime', data, 0, 50) &&
+             isValidString(data.createdBy, 1, 100) &&
+             isValidString(data.createdByName, 1, 100) &&
+             isValidString(data.createdAt, 1, 50) &&
+             isValidString(data.updatedAt, 1, 50) &&
+             data.history is list && data.history.size() <= 100 &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidMobilePrice(data) {
+      let allowed = ['id', 'brand', 'model', 'ram', 'storage', 'purchasePrice', 'sellingPrice', 'inStock', 'updatedAt', 'priceHistory', '_syncedAt'];
+      let required = ['id', 'brand', 'model', 'ram', 'storage', 'purchasePrice', 'sellingPrice', 'updatedAt', 'priceHistory'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.brand, 1, 50) &&
+             isValidString(data.model, 1, 100) &&
+             isValidString(data.ram, 1, 30) &&
+             isValidString(data.storage, 1, 30) &&
+             data.purchasePrice is number && data.purchasePrice >= 0 &&
+             data.sellingPrice is number && data.sellingPrice >= 0 &&
+             (!('inStock' in data) || data.inStock is bool) &&
+             isValidString(data.updatedAt, 1, 50) &&
+             data.priceHistory is list && data.priceHistory.size() <= 100 &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidSecondHandPurchase(data) {
+      let allowed = ['id', 'customerName', 'phone', 'alternatePhone', 'address', 'aadhaarNumber', 'aadhaarFrontUri', 'aadhaarBackUri', 'aadhaarPhotoFront', 'aadhaarPhotoBack', 'aadhaarCardPhotoUri', 'customerPhotoUri', 'brand', 'model', 'ram', 'storage', 'imei', 'condition', 'purchaseAmount', 'billImageUri', 'digitalSignatureUri', 'purchaseDate', 'purchaseTime', 'purchasedByStaffId', 'purchasedByStaffName', 'status', 'notes', '_syncedAt'];
+      let required = ['id', 'customerName', 'phone', 'address', 'aadhaarNumber', 'brand', 'model', 'imei', 'condition', 'purchaseAmount', 'digitalSignatureUri', 'purchaseDate', 'purchaseTime', 'purchasedByStaffId', 'purchasedByStaffName', 'status'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.customerName, 1, 100) &&
+             isValidString(data.phone, 7, 20) &&
+             isValidOptionalString('alternatePhone', data, 0, 20) &&
+             isValidString(data.address, 1, 250) &&
+             isValidString(data.aadhaarNumber, 4, 20) &&
+             isValidOptionalString('aadhaarFrontUri', data, 0, 500000) &&
+             isValidOptionalString('aadhaarBackUri', data, 0, 500000) &&
+             isValidOptionalString('aadhaarPhotoFront', data, 0, 500000) &&
+             isValidOptionalString('aadhaarPhotoBack', data, 0, 500000) &&
+             isValidOptionalString('aadhaarCardPhotoUri', data, 0, 500000) &&
+             isValidOptionalString('customerPhotoUri', data, 0, 500000) &&
+             isValidString(data.brand, 1, 50) &&
+             isValidString(data.model, 1, 100) &&
+             isValidOptionalString('ram', data, 0, 30) &&
+             isValidOptionalString('storage', data, 0, 30) &&
+             isValidString(data.imei, 5, 30) &&
+             isValidString(data.condition, 1, 50) &&
+             data.purchaseAmount is number && data.purchaseAmount >= 0 &&
+             isValidOptionalString('billImageUri', data, 0, 500000) &&
+             isValidString(data.digitalSignatureUri, 1, 500000) &&
+             isValidString(data.purchaseDate, 1, 50) &&
+             isValidString(data.purchaseTime, 1, 50) &&
+             isValidString(data.purchasedByStaffId, 1, 100) &&
+             isValidString(data.purchasedByStaffName, 1, 100) &&
+             data.status in ['in_stock', 'sold'] &&
+             isValidOptionalString('notes', data, 0, 1000) &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidSecondHandSale(data) {
+      let allowed = ['id', 'purchaseRecordId', 'buyerName', 'phone', 'alternatePhone', 'address', 'aadhaarNumber', 'aadhaarPhotoUri', 'buyerPhotoUri', 'brand', 'model', 'ram', 'storage', 'imei', 'sellingAmount', 'purchaseAmount', 'profitAmount', 'marginPercent', 'invoiceNumber', 'digitalSignatureUri', 'saleDate', 'saleTime', 'soldByStaffId', 'soldByStaffName', 'paymentMethod', 'warrantyMonths', 'notes', '_syncedAt'];
+      let required = ['id', 'buyerName', 'phone', 'address', 'aadhaarNumber', 'brand', 'model', 'imei', 'sellingAmount', 'purchaseAmount', 'profitAmount', 'marginPercent', 'invoiceNumber', 'digitalSignatureUri', 'saleDate', 'saleTime', 'soldByStaffId', 'soldByStaffName', 'paymentMethod'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidOptionalString('purchaseRecordId', data, 0, 100) &&
+             isValidString(data.buyerName, 1, 100) &&
+             isValidString(data.phone, 7, 20) &&
+             isValidOptionalString('alternatePhone', data, 0, 20) &&
+             isValidString(data.address, 1, 250) &&
+             isValidString(data.aadhaarNumber, 4, 20) &&
+             isValidOptionalString('aadhaarPhotoUri', data, 0, 500000) &&
+             isValidOptionalString('buyerPhotoUri', data, 0, 500000) &&
+             isValidString(data.brand, 1, 50) &&
+             isValidString(data.model, 1, 100) &&
+             isValidOptionalString('ram', data, 0, 30) &&
+             isValidOptionalString('storage', data, 0, 30) &&
+             isValidString(data.imei, 5, 30) &&
+             data.sellingAmount is number && data.sellingAmount >= 0 &&
+             data.purchaseAmount is number && data.purchaseAmount >= 0 &&
+             data.profitAmount is number &&
+             data.marginPercent is number &&
+             isValidString(data.invoiceNumber, 1, 100) &&
+             isValidString(data.digitalSignatureUri, 1, 500000) &&
+             isValidString(data.saleDate, 1, 50) &&
+             isValidString(data.saleTime, 1, 50) &&
+             isValidString(data.soldByStaffId, 1, 100) &&
+             isValidString(data.soldByStaffName, 1, 100) &&
+             data.paymentMethod in ['Cash', 'UPI', 'Card', 'Bank Transfer'] &&
+             (!('warrantyMonths' in data) || (data.warrantyMonths is number && data.warrantyMonths >= 0)) &&
+             isValidOptionalString('notes', data, 0, 1000) &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidSalesTarget(data) {
+      let allowed = ['id', 'staffId', 'staffName', 'month', 'targetAmount', 'achievedAmount', 'targetUnits', 'achievedUnits', 'incentivePercent', 'calculatedIncentive', '_syncedAt'];
+      let required = ['id', 'staffId', 'staffName', 'month', 'targetAmount', 'achievedAmount', 'targetUnits', 'achievedUnits', 'incentivePercent', 'calculatedIncentive'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.staffId, 1, 100) &&
+             isValidString(data.staffName, 1, 100) &&
+             isValidString(data.month, 1, 20) &&
+             data.targetAmount is number && data.targetAmount >= 0 &&
+             data.achievedAmount is number && data.achievedAmount >= 0 &&
+             data.targetUnits is number && data.targetUnits >= 0 &&
+             data.achievedUnits is number && data.achievedUnits >= 0 &&
+             data.incentivePercent is number && data.incentivePercent >= 0 &&
+             data.calculatedIncentive is number && data.calculatedIncentive >= 0 &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidSalarySlip(data) {
+      let allowed = ['id', 'staffId', 'staffName', 'designation', 'month', 'monthKey', 'basicSalary', 'salesIncentive', 'attendanceBonus', 'deductions', 'netSalary', 'totalWorkingDays', 'presentDays', 'lateDays', 'salesAchieved', 'generatedDate', 'isPaid', '_syncedAt'];
+      let required = ['id', 'staffId', 'staffName', 'designation', 'month', 'monthKey', 'basicSalary', 'salesIncentive', 'attendanceBonus', 'deductions', 'netSalary', 'totalWorkingDays', 'presentDays', 'lateDays', 'salesAchieved', 'generatedDate', 'isPaid'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.staffId, 1, 100) &&
+             isValidString(data.staffName, 1, 100) &&
+             isValidString(data.designation, 1, 100) &&
+             isValidString(data.month, 1, 50) &&
+             isValidString(data.monthKey, 1, 20) &&
+             data.basicSalary is number && data.basicSalary >= 0 &&
+             data.salesIncentive is number && data.salesIncentive >= 0 &&
+             data.attendanceBonus is number && data.attendanceBonus >= 0 &&
+             data.deductions is number && data.deductions >= 0 &&
+             data.netSalary is number && data.netSalary >= 0 &&
+             data.totalWorkingDays is number && data.totalWorkingDays >= 0 &&
+             data.presentDays is number && data.presentDays >= 0 &&
+             data.lateDays is number && data.lateDays >= 0 &&
+             data.salesAchieved is number && data.salesAchieved >= 0 &&
+             isValidString(data.generatedDate, 1, 50) &&
+             data.isPaid is bool &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidNotification(data) {
+      let allowed = ['id', 'title', 'body', 'type', 'timestamp', 'read', 'relatedId', '_syncedAt'];
+      let required = ['id', 'title', 'body', 'type', 'timestamp', 'read'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.id, 1, 100) &&
+             isValidString(data.title, 1, 150) &&
+             isValidString(data.body, 1, 500) &&
+             data.type in ['follow_up', 'attendance', 'lead', 'purchase', 'sale', 'target'] &&
+             isValidString(data.timestamp, 1, 50) &&
+             data.read is bool &&
+             isValidOptionalString('relatedId', data, 0, 100) &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidShopConfig(data) {
+      let allowed = ['shopName', 'tagline', 'shopAddress', 'phone', 'alternatePhone', 'email', 'gstNumber', 'latitude', 'longitude', 'allowedRadiusMeters', 'openingTime', 'closingTime', '_syncedAt'];
+      let required = ['shopName', 'tagline', 'shopAddress', 'phone', 'alternatePhone', 'email', 'gstNumber', 'latitude', 'longitude', 'allowedRadiusMeters', 'openingTime', 'closingTime'];
+
+      return data.keys().hasOnly(allowed) &&
+             data.keys().hasAll(required) &&
+             isValidString(data.shopName, 1, 100) &&
+             isValidString(data.tagline, 0, 150) &&
+             isValidString(data.shopAddress, 1, 250) &&
+             isValidString(data.phone, 7, 25) &&
+             isValidString(data.alternatePhone, 0, 25) &&
+             isValidEmail(data.email) &&
+             isValidString(data.gstNumber, 0, 30) &&
+             data.latitude is number &&
+             data.longitude is number &&
+             data.allowedRadiusMeters is number && data.allowedRadiusMeters >= 0 &&
+             isValidString(data.openingTime, 1, 20) &&
+             isValidString(data.closingTime, 1, 20) &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    function isValidConnectionTest(data) {
+      let allowed = ['test', 'source', 'testedAt', '_syncedAt'];
+      return data.keys().hasOnly(allowed) &&
+             data.test is bool &&
+             isValidOptionalString('source', data, 0, 100) &&
+             isValidOptionalString('testedAt', data, 0, 50) &&
+             isValidOptionalString('_syncedAt', data, 0, 50);
+    }
+
+    // ===============================================================
+    // Collection Security Rules
+    // ===============================================================
+
+    // 1. Users Collection
+    match /users/{userId} {
+      // Authenticated staff/manager/admin can view member profiles
+      allow read: if isAuthenticated();
+
+      // Only Admin or Manager can create staff profiles
+      allow create: if isManagerOrAdmin() && isValidUser(request.resource.data);
+
+      // Admin / Manager can update staff profiles;
+      // Individual users can update their profile (e.g. name, phone, avatar)
+      // but cannot escalate their own role, basic salary, target, active status, or id
+      allow update: if isValidUser(request.resource.data) && (
+        isManagerOrAdmin() || (
+          isOwner(userId) &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.basicSalary == resource.data.basicSalary &&
+          request.resource.data.monthlyTarget == resource.data.monthlyTarget &&
+          request.resource.data.isActive == resource.data.isActive &&
+          request.resource.data.id == resource.data.id
+        )
+      );
+
+      // Only Admin or Manager can delete user profiles
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 2. Attendance Collection
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated();
+
+      // Authenticated staff can punch in/out only for their own userId
+      allow create: if isAuthenticated() &&
+                    request.resource.data.userId == request.auth.uid &&
+                    isValidAttendance(request.resource.data);
+
+      // Attendance records are sensitive official audit trails; only Manager/Admin can adjust or delete
+      allow update: if isManagerOrAdmin() && isValidAttendance(request.resource.data);
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 3. Customer Leads Collection
+    match /leads/{leadId} {
+      allow read: if isAuthenticated();
+
+      // Staff, Manager, Admin can create and update leads
+      allow create: if isAuthenticated() && isValidLead(request.resource.data);
+
+      allow update: if isAuthenticated() &&
+                    isValidLead(request.resource.data) &&
+                    request.resource.data.id == resource.data.id &&
+                    request.resource.data.createdBy == resource.data.createdBy &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+
+      // Only Manager or Admin can delete customer leads
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 4. Mobile Prices Collection
+    match /mobile_prices/{priceId} {
+      allow read: if isAuthenticated();
+
+      // Catalog prices can only be managed by Manager or Admin
+      allow create: if isManagerOrAdmin() && isValidMobilePrice(request.resource.data);
+      allow update: if isManagerOrAdmin() &&
+                    isValidMobilePrice(request.resource.data) &&
+                    request.resource.data.id == resource.data.id;
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 5. Second-Hand Purchases Collection
+    match /second_hand_purchases/{purchaseId} {
+      allow read: if isAuthenticated();
+
+      // Staff can record second-hand purchase with customer KYC & signature
+      allow create: if isAuthenticated() && isValidSecondHandPurchase(request.resource.data);
+
+      // Legal & financial buyback records can only be updated/deleted by Manager or Admin
+      allow update: if isManagerOrAdmin() && isValidSecondHandPurchase(request.resource.data);
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 6. Second-Hand Sales Collection
+    match /second_hand_sales/{saleId} {
+      allow read: if isAuthenticated();
+
+      // Staff can record sales of refurbished / 2nd hand phones with invoice
+      allow create: if isAuthenticated() && isValidSecondHandSale(request.resource.data);
+
+      // Only Manager or Admin can modify/cancel finalized sales transactions
+      allow update: if isManagerOrAdmin() && isValidSecondHandSale(request.resource.data);
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 7. Sales Targets Collection
+    match /sales_targets/{targetId} {
+      allow read: if isAuthenticated();
+
+      // Sales quotas and incentive slabs set exclusively by Manager or Admin
+      allow create: if isManagerOrAdmin() && isValidSalesTarget(request.resource.data);
+      allow update: if isManagerOrAdmin() && isValidSalesTarget(request.resource.data);
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 8. Salary Slips Collection
+    match /salary_slips/{slipId} {
+      // Individual staff member can only read their own slip; Admin & Manager can read all
+      allow read: if isAuthenticated() && (
+        isManagerOrAdmin() ||
+        resource.data.staffId == request.auth.uid
+      );
+
+      // Financial payout calculation and issuance reserved strictly for Admin
+      allow create: if isAdmin() && isValidSalarySlip(request.resource.data);
+      allow update: if isAdmin() && isValidSalarySlip(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // 9. Notifications Collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated();
+
+      // System or authenticated users can dispatch notifications
+      allow create: if isAuthenticated() && isValidNotification(request.resource.data);
+
+      // Users can mark notifications as read without altering notification origin/body
+      allow update: if isAuthenticated() &&
+                    isValidNotification(request.resource.data) &&
+                    request.resource.data.id == resource.data.id &&
+                    request.resource.data.type == resource.data.type &&
+                    request.resource.data.timestamp == resource.data.timestamp;
+
+      // Only Manager or Admin can prune notifications
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 10. Shop Configuration (Geo-fencing, Coordinates, Hours)
+    match /shop_config/{configId} {
+      allow read: if isAuthenticated();
+
+      // Store parameters and geo-fencing radius strictly Admin-controlled
+      allow create, update: if isAdmin() && isValidShopConfig(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // 11. Connectivity Test Collection (Healthcheck / Diagnostics)
+    match /_connection_test/{testDocId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidConnectionTest(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

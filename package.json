@@ -7,13 +7,29 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "build:apk": "cd android && ./gradlew assembleRelease",
+    "build:aab": "cd android && ./gradlew bundleRelease"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
+    "@react-native-community/geolocation": "^3.4.0",
+    "@react-native-firebase/app": "^26.4.0",
+    "@react-native/new-app-screen": "0.87.1",
+    "@react-navigation/bottom-tabs": "^7.20.0",
+    "@react-navigation/native": "^7.5.0",
+    "@react-navigation/native-stack": "^7.20.0",
+    "@types/papaparse": "^5.5.2",
+    "firebase": "^12.19.0",
+    "lucide-react-native": "^1.49.0",
+    "papaparse": "^5.7.0",
     "react": "19.2.3",
     "react-native": "0.87.1",
-    "@react-native/new-app-screen": "0.87.1",
-    "react-native-safe-area-context": "^5.5.2"
+    "react-native-image-picker": "^8.3.0",
+    "react-native-safe-area-context": "^5.5.2",
+    "react-native-screens": "^4.28.0",
+    "react-native-svg": "^15.15.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
