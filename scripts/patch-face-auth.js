@@ -19,3 +19,41 @@ if (source.includes('triggerDebugCapture') || source.includes('cameraRef') || so
   throw new Error('Could not disable all camera frame debug capture paths.');
 }
 fs.writeFileSync(viewPath, source);
+
+// worklets-core 1.6.3 requests Babel proposal plugin names that Babel 7.25+
+// replaced with transform plugin names. Keep the worklet compiler on the
+// equivalent transform plugins already installed with the React Native preset.
+const workletsRoot = path.join(__dirname, '..', 'node_modules', 'react-native-worklets-core');
+const workletsInfo = JSON.parse(fs.readFileSync(path.join(workletsRoot, 'package.json'), 'utf8'));
+if (workletsInfo.version !== '1.6.3') {
+  throw new Error(`Review the Babel plugin patch before upgrading react-native-worklets-core (${workletsInfo.version}).`);
+}
+
+const workletsPluginPaths = [
+  path.join(workletsRoot, 'src', 'plugin', 'index.js'),
+  path.join(workletsRoot, 'lib', 'commonjs', 'plugin', 'index.js'),
+  path.join(workletsRoot, 'lib', 'module', 'plugin', 'index.js'),
+];
+for (const workletsPluginPath of workletsPluginPaths) {
+  let workletsSource = fs.readFileSync(workletsPluginPath, 'utf8');
+  workletsSource = workletsSource.replaceAll(
+    '@babel/plugin-proposal-optional-chaining',
+    '@babel/plugin-transform-optional-chaining',
+  );
+  workletsSource = workletsSource.replaceAll(
+    '@babel/plugin-proposal-nullish-coalescing-operator',
+    '@babel/plugin-transform-nullish-coalescing-operator',
+  );
+  workletsSource = workletsSource.replaceAll(
+    '    presets: ["@babel/preset-typescript"],\n    plugins: [',
+    '    plugins: [\n      "@babel/plugin-transform-typescript",',
+  );
+  if (
+    workletsSource.includes('@babel/plugin-proposal-optional-chaining') ||
+    workletsSource.includes('@babel/plugin-proposal-nullish-coalescing-operator') ||
+    workletsSource.includes('@babel/preset-typescript')
+  ) {
+    throw new Error(`Could not update missing Babel transform references in ${workletsPluginPath}.`);
+  }
+  fs.writeFileSync(workletsPluginPath, workletsSource);
+}
