@@ -94,7 +94,8 @@ export class FirestoreSyncService {
       const snapshot = await fLib.getDocs(colRef);
       const records: T[] = [];
       snapshot.forEach((docSnap: any) => {
-        records.push({ id: docSnap.id, ...docSnap.data() } as T);
+        // The Firestore document path is the canonical record ID.
+        records.push({ ...docSnap.data(), id: docSnap.id } as T);
       });
       return records;
     } catch (e: any) {
@@ -110,26 +111,30 @@ export class FirestoreSyncService {
     try {
       const remote = await this.fetchCollection<any>(collectionName);
       if (!remote || remote.length === 0) return 0;
-
-      switch (collectionName) {
-        case FIRESTORE_COLLECTIONS.LEADS: {
-          const local = await StorageService.getLeads();
-          const localMap = new Map(local.map(l => [l.id, l]));
-          remote.forEach(r => localMap.set(r.id, { ...localMap.get(r.id), ...r }));
-          await StorageService.saveBulkLeads(Array.from(localMap.values()));
-          return remote.length;
-        }
-        case FIRESTORE_COLLECTIONS.MOBILE_PRICES: {
-          await StorageService.saveBulkPriceItems(remote);
-          return remote.length;
-        }
-        default:
-          return remote.length;
-      }
+      await StorageService.mergeCloudCollection(collectionName, remote);
+      return remote.length;
     } catch (e) {
       console.warn(`[FirestoreSync] Pull merge error for ${collectionName}:`, e);
       return 0;
     }
+  }
+
+  /** Pull cloud records into the local cache after Firebase authentication. */
+  static async pullAllCloudToLocal(): Promise<Record<string, number>> {
+    const collections = [
+      FIRESTORE_COLLECTIONS.USERS,
+      FIRESTORE_COLLECTIONS.ATTENDANCE,
+      FIRESTORE_COLLECTIONS.LEADS,
+      FIRESTORE_COLLECTIONS.MOBILE_PRICES,
+      FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES,
+      FIRESTORE_COLLECTIONS.SECOND_HAND_SALES,
+      FIRESTORE_COLLECTIONS.SALES_TARGETS,
+      FIRESTORE_COLLECTIONS.SALARY_SLIPS,
+      FIRESTORE_COLLECTIONS.NOTIFICATIONS,
+      FIRESTORE_COLLECTIONS.SHOP_CONFIG,
+    ];
+    const results = await Promise.all(collections.map(async name => [name, await this.pullCollectionAndMerge(name)] as const));
+    return Object.fromEntries(results);
   }
 
   /**

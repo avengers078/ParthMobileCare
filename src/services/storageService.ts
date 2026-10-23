@@ -377,7 +377,46 @@ export class StorageService {
 
   static async getAllUsers(): Promise<User[]> {
     const data = await AsyncStorage.getItem(STORAGE_KEYS.USERS_LIST);
-    return data ? JSON.parse(data) : INITIAL_USERS;
+    return data ? JSON.parse(data) : [];
+  }
+
+  /** Merge authenticated cloud data into the on-device cache without echoing writes. */
+  static async mergeCloudCollection(collectionName: string, remoteRecords: any[]): Promise<void> {
+    const keys: Record<string, string> = {
+      users: STORAGE_KEYS.USERS_LIST,
+      attendance: STORAGE_KEYS.ATTENDANCE,
+      leads: STORAGE_KEYS.LEADS,
+      mobile_prices: STORAGE_KEYS.PRICE_LIST,
+      second_hand_purchases: STORAGE_KEYS.SECOND_HAND_PURCHASES,
+      second_hand_sales: STORAGE_KEYS.SECOND_HAND_SALES,
+      sales_targets: STORAGE_KEYS.SALES_TARGETS,
+      salary_slips: STORAGE_KEYS.SALARY_SLIPS,
+      notifications: STORAGE_KEYS.NOTIFICATIONS,
+    };
+
+    if (collectionName === FIRESTORE_COLLECTIONS.SHOP_CONFIG) {
+      const config = remoteRecords[0];
+      if (config) {
+        const shopConfig = { ...config };
+        delete shopConfig.id;
+        await AsyncStorage.setItem(STORAGE_KEYS.SHOP_CONFIG, JSON.stringify(shopConfig));
+      }
+      return;
+    }
+
+    const storageKey = keys[collectionName];
+    if (!storageKey) return;
+    const cachedText = await AsyncStorage.getItem(storageKey);
+    // Firebase Auth account IDs are canonical; old locally seeded/demo user IDs
+    // must not be treated as provisioned cloud accounts or uploaded later.
+    const cached: any[] = collectionName === FIRESTORE_COLLECTIONS.USERS
+      ? []
+      : cachedText ? JSON.parse(cachedText) : [];
+    const merged = new Map<string, any>();
+    cached.forEach(item => item?.id && merged.set(item.id, item));
+    // Remote data wins for matching IDs; local-only records are retained for offline migration.
+    remoteRecords.forEach(item => item?.id && merged.set(item.id, { ...merged.get(item.id), ...item }));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(Array.from(merged.values())));
   }
 
   static async saveUser(user: User): Promise<void> {
@@ -588,7 +627,7 @@ export class StorageService {
   // --- Salary Slips ---
   static async getSalarySlips(): Promise<SalarySlip[]> {
     const data = await AsyncStorage.getItem(STORAGE_KEYS.SALARY_SLIPS);
-    return data ? JSON.parse(data) : INITIAL_SALARY_SLIPS;
+    return data ? JSON.parse(data) : [];
   }
 
   static async saveSalarySlip(slip: SalarySlip): Promise<void> {

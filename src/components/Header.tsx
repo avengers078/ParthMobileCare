@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Moon, Sun } from 'lucide-react-native';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Modal,
-  FlatList,
   ViewStyle,
   StyleProp,
 } from 'react-native';
@@ -15,7 +13,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Badge } from './Badge';
 import { AppIcon } from './AppIcon';
 import { UserRole } from '../types';
-import { RADIUS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
+import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
 
 export interface HeaderProps {
   title: string;
@@ -36,9 +34,8 @@ export const Header: React.FC<HeaderProps> = ({
   actionRow,
   actionRowStyle,
 }) => {
-  const { currentUser, role, allUsers, switchUserById } = useAuth();
+  const { role } = useAuth();
   const { colors, isDark, toggleTheme } = useTheme();
-  const [roleModalVisible, setRoleModalVisible] = useState(false);
 
   const getRoleVariant = (r: UserRole) => {
     if (r === 'admin') return 'danger';
@@ -98,14 +95,9 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </TouchableOpacity>
 
-          {/* Role Pill Switcher */}
-          <TouchableOpacity
-            onPress={() => setRoleModalVisible(true)}
-            activeOpacity={0.8}
-            style={styles.roleWrapper}
-          >
+          <View style={styles.roleWrapper}>
             <Badge label={role} variant={getRoleVariant(role)} size="medium" />
-          </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -119,77 +111,6 @@ export const Header: React.FC<HeaderProps> = ({
         </View>
       ) : null}
 
-      {/* Role & User Switcher Modal for interactive testing */}
-      <Modal
-        visible={roleModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setRoleModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setRoleModalVisible(false)}
-        >
-          <View
-            style={[
-              styles.modalCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-              SHADOWS.modal,
-            ]}
-          >
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              Switch Active User & Role
-            </Text>
-            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-              Test role permissions across Admin, Manager & Staff:
-            </Text>
-
-            <FlatList
-              data={allUsers}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.userRow,
-                    {
-                      borderColor:
-                        currentUser?.id === item.id ? colors.primary : colors.border,
-                      backgroundColor:
-                        currentUser?.id === item.id
-                          ? isDark
-                            ? 'rgba(37,99,235,0.15)'
-                            : '#EFF6FF'
-                          : 'transparent',
-                    },
-                  ]}
-                  onPress={async () => {
-                    await switchUserById(item.id);
-                    setRoleModalVisible(false);
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.userName, { color: colors.text }]}>
-                      {item.name}
-                    </Text>
-                    <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
-                      {item.designation} • {item.email}
-                    </Text>
-                  </View>
-                  <Badge label={item.role} variant={getRoleVariant(item.role)} />
-                </TouchableOpacity>
-              )}
-            />
-
-            <TouchableOpacity
-              style={[styles.closeModalBtn, { backgroundColor: colors.primary }]}
-              onPress={() => setRoleModalVisible(false)}
-            >
-              <Text style={styles.closeModalText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 };
@@ -261,53 +182,5 @@ const styles = StyleSheet.create({
   },
   actionRowStart: {
     justifyContent: 'flex-start',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    justifyContent: 'center',
-    padding: SPACING.xl,
-  },
-  modalCard: {
-    borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    padding: SPACING.xl,
-    maxHeight: '80%',
-  },
-  modalTitle: {
-    ...TYPOGRAPHY.h3,
-    fontWeight: '700',
-  },
-  modalSubtitle: {
-    ...TYPOGRAPHY.caption,
-    marginTop: 4,
-    marginBottom: SPACING.lg,
-  },
-  userRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    marginVertical: SPACING.xs,
-  },
-  userName: {
-    ...TYPOGRAPHY.bodyBold,
-  },
-  userEmail: {
-    ...TYPOGRAPHY.captionSmall,
-    marginTop: 2,
-  },
-  closeModalBtn: {
-    marginTop: SPACING.lg,
-    paddingVertical: 12,
-    borderRadius: RADIUS.md,
-    alignItems: 'center',
-  },
-  closeModalText: {
-    color: '#FFF',
-    fontWeight: '700',
-    fontSize: 15,
   },
 });
