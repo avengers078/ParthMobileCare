@@ -116,7 +116,7 @@ export class FirestoreSyncService {
           const local = await StorageService.getLeads();
           const localMap = new Map(local.map(l => [l.id, l]));
           remote.forEach(r => localMap.set(r.id, { ...localMap.get(r.id), ...r }));
-          await StorageService.saveBulkPriceItems([]); // just to trigger AsyncStorage write
+          await StorageService.saveBulkLeads(Array.from(localMap.values()));
           return remote.length;
         }
         case FIRESTORE_COLLECTIONS.MOBILE_PRICES: {
@@ -138,9 +138,13 @@ export class FirestoreSyncService {
    */
   static async syncAllLocalToCloud(): Promise<SyncResult> {
     let syncedCount = 0;
+    let expectedCount = 0;
     const details: Record<string, number> = {};
 
     try {
+      if (!(await FirebaseService.init())) {
+        return { success: false, syncedCount: 0, error: 'Firebase initialization failed' };
+      }
       const db = FirebaseService.getFirestore();
       if (!db) {
         return { success: false, syncedCount: 0, error: 'Database service unavailable' };
@@ -148,6 +152,7 @@ export class FirestoreSyncService {
 
       // 1. Users
       const users = await StorageService.getAllUsers();
+      expectedCount += users.length;
       let userCount = 0;
       for (const u of users) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.USERS, u.id, u);
@@ -160,6 +165,7 @@ export class FirestoreSyncService {
 
       // 2. Attendance
       const attendance = await StorageService.getAttendanceRecords();
+      expectedCount += attendance.length;
       let attCount = 0;
       for (const a of attendance) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.ATTENDANCE, a.id, a);
@@ -172,6 +178,7 @@ export class FirestoreSyncService {
 
       // 3. Customer Leads
       const leads = await StorageService.getLeads();
+      expectedCount += leads.length;
       let leadCount = 0;
       for (const l of leads) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.LEADS, l.id, l);
@@ -184,6 +191,7 @@ export class FirestoreSyncService {
 
       // 4. Mobile Prices
       const prices = await StorageService.getPriceList();
+      expectedCount += prices.length;
       let priceCount = 0;
       for (const p of prices) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.MOBILE_PRICES, p.id, p);
@@ -196,6 +204,7 @@ export class FirestoreSyncService {
 
       // 5. Second Hand Purchases
       const purchases = await StorageService.getPurchases();
+      expectedCount += purchases.length;
       let purCount = 0;
       for (const pur of purchases) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, pur.id, pur);
@@ -208,6 +217,7 @@ export class FirestoreSyncService {
 
       // 6. Second Hand Sales
       const sales = await StorageService.getSales();
+      expectedCount += sales.length;
       let saleCount = 0;
       for (const s of sales) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, s.id, s);
@@ -220,6 +230,7 @@ export class FirestoreSyncService {
 
       // 7. Sales Targets
       const targets = await StorageService.getSalesTargets();
+      expectedCount += targets.length;
       let targetCount = 0;
       for (const t of targets) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.SALES_TARGETS, t.id, t);
@@ -232,6 +243,7 @@ export class FirestoreSyncService {
 
       // 8. Salary Slips
       const slips = await StorageService.getSalarySlips();
+      expectedCount += slips.length;
       let slipCount = 0;
       for (const slip of slips) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.SALARY_SLIPS, slip.id, slip);
@@ -244,6 +256,7 @@ export class FirestoreSyncService {
 
       // 9. Notifications
       const notifs = await StorageService.getNotifications();
+      expectedCount += notifs.length;
       let notifCount = 0;
       for (const n of notifs) {
         const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.NOTIFICATIONS, n.id, n);
@@ -256,13 +269,20 @@ export class FirestoreSyncService {
 
       // 10. Shop Config
       const config = await StorageService.getShopConfig();
+      expectedCount += 1;
       const okConfig = await this.syncDocument(FIRESTORE_COLLECTIONS.SHOP_CONFIG, 'main_store', config);
       if (okConfig) {
         syncedCount++;
       }
       details[FIRESTORE_COLLECTIONS.SHOP_CONFIG] = okConfig ? 1 : 0;
 
-      return { success: true, syncedCount, details };
+      const allRecordsSynced = syncedCount === expectedCount;
+      return {
+        success: allRecordsSynced,
+        syncedCount,
+        details,
+        error: allRecordsSynced ? undefined : 'Some records could not be uploaded. Check Firebase Authentication and Firestore security rules.',
+      };
     } catch (e: any) {
       console.warn('Sync all error:', e);
       return { success: false, syncedCount, error: e?.message || 'Sync failed', details };

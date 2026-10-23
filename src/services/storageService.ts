@@ -443,6 +443,11 @@ export class StorageService {
     FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.LEADS, lead.id, lead).catch(() => {});
   }
 
+  /** Replace the local lead cache after a cloud pull without echoing writes back. */
+  static async saveBulkLeads(leads: CustomerLead[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.LEADS, JSON.stringify(leads));
+  }
+
   static async deleteLead(id: string): Promise<void> {
     const leads = await this.getLeads();
     const filtered = leads.filter(l => l.id !== id);

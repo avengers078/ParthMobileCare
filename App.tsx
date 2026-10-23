@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -10,11 +10,6 @@ import FirebaseService from './src/services/firebase';
 function MainApp() {
   const { isDark } = useTheme();
 
-  useEffect(() => {
-    // Initialize Firebase client service
-    FirebaseService.init();
-  }, []);
-
   return (
     <>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
@@ -24,6 +19,20 @@ function MainApp() {
 }
 
 export default function App() {
+  const [firebaseInitialized, setFirebaseInitialized] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    FirebaseService.init().finally(() => {
+      if (mounted) setFirebaseInitialized(true);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!firebaseInitialized) return null;
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>

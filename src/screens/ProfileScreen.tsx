@@ -637,8 +637,26 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
                   </Text>
                 </View>
                 <StatusBadge
-                  label="PROD ACTIVE"
-                  variant="primary"
+                  label={
+                    isTestingCloud
+                      ? 'CHECKING'
+                      : cloudTestResult?.success
+                      ? 'CONNECTED'
+                      : cloudTestResult?.errorCode === 'permission-denied'
+                      ? 'RULES BLOCK'
+                      : cloudTestResult
+                      ? 'UNAVAILABLE'
+                      : 'NOT TESTED'
+                  }
+                  variant={
+                    cloudTestResult?.success
+                      ? 'success'
+                      : cloudTestResult?.errorCode === 'permission-denied'
+                      ? 'warning'
+                      : cloudTestResult
+                      ? 'danger'
+                      : 'neutral'
+                  }
                   size="small"
                 />
               </View>
