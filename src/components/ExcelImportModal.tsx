@@ -117,7 +117,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         throw new Error(copy[0]?.copyError || 'Could not read the selected file.');
       }
 
-      const localPath = copy[0].localUri.replace(/^file:\/\//, '');
+      // Document providers may return an encoded local URI (for example, spaces as %20).
+      const localPath = decodeURIComponent(copy[0].localUri.replace(/^file:\/\//, ''));
       let result: ImportValidationResult;
       if (extension === 'csv') {
         const csv = await FileSystem.readFile(localPath, 'utf8');
