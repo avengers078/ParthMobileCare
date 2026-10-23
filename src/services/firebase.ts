@@ -22,12 +22,12 @@ const { getReactNativePersistence } = require('@firebase/auth');
 // Firebase web config values identify the project; access to data is controlled
 // by Firebase Auth and the project's Firestore/Storage security rules.
 export const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyBVUJbkmg-ZKXAP2mmkwFYE--c3xua9usY',
-  authDomain: 'parthmobilecare.firebaseapp.com',
-  projectId: 'parthmobilecare',
-  storageBucket: 'parthmobilecare.firebasestorage.app',
-  messagingSenderId: '1974801207',
-  appId: '1:1974801207:android:dd5038dbeeb0be5b8940b2',
+  apiKey: 'AIzaSyAdvwIbQjNYQQ4E9kgixdyJRlTk9W_GBHY',
+  authDomain: 'parthmobilecare-a474d.firebaseapp.com',
+  projectId: 'parthmobilecare-a474d',
+  storageBucket: 'parthmobilecare-a474d.firebasestorage.app',
+  messagingSenderId: '369865629891',
+  appId: '1:369865629891:android:2e8cbf1f7472691c3e8276',
 };
 
 export interface FirestoreTestResult {
