@@ -21,3 +21,15 @@ buildscript {
 
 
 apply plugin: "com.facebook.react.rootproject"
+
+// Keep native modules on the same NDK runtime as React Native's prebuilt
+// libc++_shared.so. Otherwise libraries can reference C++ ABI symbols that
+// are missing from the runtime packaged in react-android.
+subprojects { nativeProject ->
+    nativeProject.plugins.withId("com.android.library") {
+        nativeProject.android.ndkVersion = rootProject.ext.ndkVersion
+    }
+    nativeProject.plugins.withId("com.android.application") {
+        nativeProject.android.ndkVersion = rootProject.ext.ndkVersion
+    }
+}
