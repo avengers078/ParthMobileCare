@@ -128,7 +128,7 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({ vi
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.card, step === 'capture' && styles.captureCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <View style={styles.headerTitle}><Camera size={18} color={colors.primary} /><Text style={[styles.title, { color: colors.text }]}>On-device Face Enrollment</Text></View>
             <TouchableOpacity onPress={onClose} accessibilityLabel="Close face enrollment"><X size={20} color={colors.textSecondary} /></TouchableOpacity>
@@ -136,7 +136,9 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({ vi
 
           {visible && step === 'capture' ? (
             <View style={styles.captureWrap}>
-              <OnDeviceFaceAuthView mode="enroll" sessionKey={sessionKey} onResult={handleCaptureResult} onClose={onClose} />
+              <View style={styles.cameraStage}>
+                <OnDeviceFaceAuthView mode="enroll" sessionKey={sessionKey} onResult={handleCaptureResult} onClose={onClose} />
+              </View>
               <View style={styles.captureInfo}>
                 <Text style={[styles.progress, { color: colors.text }]}>Live sample {Math.min(sampleCount + 1, REQUIRED_SAMPLES)} of {REQUIRED_SAMPLES}</Text>
                 <Text style={[styles.hint, { color: colors.textSecondary }]}>Follow the randomized blink, smile, or head-turn instruction. Samples stay on this device.</Text>
@@ -181,6 +183,7 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({ vi
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.65)', padding: 16 },
   card: { maxHeight: '94%', minHeight: 380, borderWidth: 1, borderRadius: 18, overflow: 'hidden' },
+  captureCard: { height: '94%', minHeight: 0 },
   header: { minHeight: 56, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1 },
   headerTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: { fontSize: 16, fontWeight: '700' },
@@ -195,8 +198,9 @@ const styles = StyleSheet.create({
   secondaryButton: { minHeight: 40, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   revokeText: { fontWeight: '700' },
   retryButton: { minHeight: 40, minWidth: 132, paddingHorizontal: 14, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  captureWrap: { flex: 1, minHeight: 450 },
-  captureInfo: { position: 'absolute', left: 14, right: 14, bottom: 14, alignItems: 'center', padding: 12, gap: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.96)' },
+  captureWrap: { flex: 1, minHeight: 0, padding: 12, gap: 10 },
+  cameraStage: { flex: 1, minHeight: 0, overflow: 'hidden', borderRadius: 14 },
+  captureInfo: { flexShrink: 0, alignItems: 'center', padding: 12, gap: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.96)' },
   progress: { fontWeight: '700' },
   error: { textAlign: 'center', fontSize: 13 },
 });
