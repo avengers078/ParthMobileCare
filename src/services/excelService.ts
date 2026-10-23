@@ -125,6 +125,11 @@ export class ExcelService {
     return String(value).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
+  private static normalizeVariant(value: any): string {
+    // Spreadsheet entries commonly vary only by spaces, e.g. "8GB" vs "8 GB".
+    return this.normalizeValue(value).replace(/\s+/g, '').toUpperCase();
+  }
+
   private static async processGrid(grid: any[][], existingList: MobilePriceItem[], sheetName?: string): Promise<ImportValidationResult> {
     const detected = this.findHeader(grid);
     const result = await this.processRawRows(detected.rows, existingList);
@@ -151,8 +156,8 @@ export class ExcelService {
 
       const brand = this.normalizeValue(normalized.brand);
       const model = this.normalizeValue(normalized.model);
-      const ram = this.normalizeValue(normalized.ram);
-      const storage = this.normalizeValue(normalized.storage);
+      const ram = this.normalizeVariant(normalized.ram);
+      const storage = this.normalizeVariant(normalized.storage);
       const purchasePrice = this.parsePrice(normalized.purchasePrice);
       const sellingPrice = this.parsePrice(normalized.sellingPrice);
       const rowNumber = Number(row.__sourceRowNumber) || i + 2;
@@ -202,8 +207,8 @@ export class ExcelService {
   }
 
   private static itemKey(item: Pick<MobilePriceItem, 'brand' | 'model' | 'ram' | 'storage'>): string {
-    return [item.brand, item.model, item.ram || '', item.storage || '']
-      .map(value => this.normalizeValue(value).toLowerCase()).join('|');
+    return [this.normalizeValue(item.brand).toLowerCase(), this.normalizeValue(item.model).toLowerCase(),
+      this.normalizeVariant(item.ram).toLowerCase(), this.normalizeVariant(item.storage).toLowerCase()].join('|');
   }
 
   static async parseCSVString(csvContent: string, existingList: MobilePriceItem[]): Promise<ImportValidationResult> {

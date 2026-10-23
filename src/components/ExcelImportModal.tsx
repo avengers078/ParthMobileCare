@@ -410,6 +410,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                   </View>
                 </View>
 
+                {validationResult.duplicateCount > 0 && (
+                  <Text style={[styles.helperText, { color: colors.textSecondary, marginBottom: 12 }]}>
+                    {validationResult.duplicateCount} duplicate row{validationResult.duplicateCount === 1 ? '' : 's'} consolidated; the latest row values are used.
+                  </Text>
+                )}
+
                 {/* Detected Models Preview */}
                 <Text style={[styles.previewHeading, { color: colors.text }]}>
                   Detected Models Preview ({validationResult.validItems.length})
