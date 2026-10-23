@@ -30,20 +30,14 @@ import { PdfService } from '../services/pdfService';
 import { SalarySlip, ShopConfig, SalesTarget } from '../types';
 import { RADIUS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 import { formatCurrency, getTodayDateString } from '../utils/format';
-import FirebaseService, { FirestoreTestResult, DEFAULT_FIREBASE_CONFIG } from '../services/firebase';
-import { FirestoreSyncService } from '../services/firestoreSync';
 
 export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const { currentUser, role, isAdmin, logout } = useAuth();
   const { colors, isDark, toggleTheme } = useTheme();
   const { config, updateConfig } = useShopConfig();
 
-  // Active section tab: 'account' | 'performance' | 'shop_config' | 'cloud_sync'
-  const [activeSection, setActiveSection] = useState<'account' | 'performance' | 'shop_config' | 'cloud_sync'>('account');
-  const [isTestingCloud, setIsTestingCloud] = useState(false);
-  const [cloudTestResult, setCloudTestResult] = useState<FirestoreTestResult | null>(null);
-  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
-  const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
+  // Active section tab: 'account' | 'performance' | 'shop_config'
+  const [activeSection, setActiveSection] = useState<'account' | 'performance' | 'shop_config'>('account');
 
   // Shop config state
   const [latitude, setLatitude] = useState(config.latitude.toString());
@@ -163,46 +157,6 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
     }
   };
 
-  const handleTestCloudConnection = async () => {
-    setIsTestingCloud(true);
-    setCloudTestResult(null);
-    try {
-      const result = await FirestoreSyncService.testConnection();
-      setCloudTestResult(result);
-      if (result.success) {
-        Alert.alert('Connection Verified!', result.message);
-      } else if (result.errorCode === 'permission-denied') {
-        Alert.alert('Cloud Reached', `${result.message}\nProject ID: ${result.projectId}`);
-      } else {
-        Alert.alert('Diagnostic Result', `${result.message} (Code: ${result.errorCode || 'unknown'})`);
-      }
-    } catch (e: any) {
-      Alert.alert('Diagnostic Error', e.message || 'Diagnostic failed');
-    } finally {
-      setIsTestingCloud(false);
-    }
-  };
-
-  const handleSyncAllToCloud = async () => {
-    setIsSyncingCloud(true);
-    setSyncStatusText('Syncing 10 business collections to Cloud Firestore...');
-    try {
-      const result = await FirestoreSyncService.syncAllLocalToCloud();
-      if (result.success) {
-        setSyncStatusText(`Sync complete! ${result.syncedCount} records uploaded to Cloud Firestore.`);
-        Alert.alert('Cloud Sync Complete', `Successfully synchronized ${result.syncedCount} business records across 10 collections.`);
-      } else {
-        setSyncStatusText(`Sync status: ${result.syncedCount} records synced.`);
-        Alert.alert('Cloud Sync Note', result.error || 'Saved locally. Cloud sync pending permissions.');
-      }
-    } catch (e: any) {
-      setSyncStatusText('Sync failed');
-      Alert.alert('Sync Error', e.message || 'Could not sync with cloud.');
-    } finally {
-      setIsSyncingCloud(false);
-    }
-  };
-
   return (
     <ScreenContainer edges={['top', 'left', 'right']}>
       <AppHeader title="My Profile" subtitle="Account & Store Settings" />
@@ -237,7 +191,6 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
             { key: 'account', label: 'Account', icon: 'user', iconColor: colors.primary },
             { key: 'performance', label: 'Targets & Salary', icon: 'analytics', iconColor: colors.warning },
             { key: 'shop_config', label: 'Shop Geo-Fence', icon: 'location', iconColor: colors.success },
-            { key: 'cloud_sync', label: 'Cloud Firestore', icon: 'upload', iconColor: '#2563EB' },
           ].map(tab => {
             const isActive = activeSection === tab.key;
             return (
@@ -623,184 +576,6 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
           </AppCard>
         )}
 
-        {/* --- 4. Cloud Firestore Management & Diagnostics --- */}
-        {activeSection === 'cloud_sync' && (
-          <>
-            <AppCard>
-              <View style={styles.headerBetween}>
-                <View>
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>
-                    Cloud Firestore Status
-                  </Text>
-                  <Text style={[styles.settingSub, { color: colors.textSecondary }]}>
-                    Google Cloud Platform (Mumbai - asia-south1)
-                  </Text>
-                </View>
-                <StatusBadge
-                  label={
-                    isTestingCloud
-                      ? 'CHECKING'
-                      : cloudTestResult?.success
-                      ? 'CONNECTED'
-                      : cloudTestResult?.errorCode === 'permission-denied'
-                      ? 'RULES BLOCK'
-                      : cloudTestResult
-                      ? 'UNAVAILABLE'
-                      : 'NOT TESTED'
-                  }
-                  variant={
-                    cloudTestResult?.success
-                      ? 'success'
-                      : cloudTestResult?.errorCode === 'permission-denied'
-                      ? 'warning'
-                      : cloudTestResult
-                      ? 'danger'
-                      : 'neutral'
-                  }
-                  size="small"
-                />
-              </View>
-
-              <View style={[styles.infoRowContainer, { marginVertical: SPACING.sm }]}>
-                <Text style={[styles.infoRowText, { color: colors.textSecondary }]}>
-                  Project ID: <Text style={{ color: colors.text, fontWeight: '700' }}>{DEFAULT_FIREBASE_CONFIG.projectId}</Text>
-                </Text>
-                <Text style={[styles.infoRowText, { color: colors.textSecondary }]}>
-                  Database ID: <Text style={{ color: colors.text, fontWeight: '600' }}>(default)</Text>
-                </Text>
-                <Text style={[styles.infoRowText, { color: colors.textSecondary }]}>
-                  Region: <Text style={{ color: colors.text, fontWeight: '600' }}>asia-south1 (Mumbai)</Text>
-                </Text>
-                <Text style={[styles.infoRowText, { color: colors.textSecondary }]}>
-                  Application ID: <Text style={{ color: colors.text, fontWeight: '600' }}>com.parthmobilecare</Text>
-                </Text>
-                <Text style={[styles.infoRowText, { color: colors.textSecondary }]}>
-                  Storage Bucket: <Text style={{ color: colors.text, fontWeight: '600' }}>{DEFAULT_FIREBASE_CONFIG.storageBucket}</Text>
-                </Text>
-              </View>
-
-              {cloudTestResult && (
-                <View
-                  style={{
-                    backgroundColor: cloudTestResult.success
-                      ? (isDark ? 'rgba(34,197,94,0.15)' : '#DCFCE7')
-                      : cloudTestResult.errorCode === 'permission-denied'
-                      ? (isDark ? 'rgba(59,130,246,0.15)' : '#EFF6FF')
-                      : (isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2'),
-                    borderRadius: RADIUS.md,
-                    padding: SPACING.md,
-                    marginVertical: SPACING.sm,
-                    borderWidth: 1,
-                    borderColor: cloudTestResult.success
-                      ? colors.success
-                      : cloudTestResult.errorCode === 'permission-denied'
-                      ? colors.primary
-                      : colors.danger,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontWeight: '700',
-                      fontSize: 13,
-                      color: cloudTestResult.success
-                        ? colors.success
-                        : cloudTestResult.errorCode === 'permission-denied'
-                        ? colors.primary
-                        : colors.danger,
-                      marginBottom: 4,
-                    }}
-                  >
-                    {cloudTestResult.success
-                      ? '✓ LIVE CONNECTION & WRITE VERIFIED'
-                      : cloudTestResult.errorCode === 'permission-denied'
-                      ? 'ℹ FIREBASE REACHED (PRODUCTION RULES ENFORCING AUTH)'
-                      : `⚠ DIAGNOSTIC FAILED (${cloudTestResult.errorCode || 'UNKNOWN'})`}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.text, lineHeight: 18 }}>
-                    {cloudTestResult.message}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 4 }}>
-                    Timestamp: {cloudTestResult.timestamp}
-                  </Text>
-                </View>
-              )}
-
-              {syncStatusText && (
-                <View
-                  style={{
-                    backgroundColor: isDark ? 'rgba(37,99,235,0.12)' : '#EFF6FF',
-                    borderRadius: RADIUS.md,
-                    padding: SPACING.sm,
-                    marginVertical: SPACING.xs,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>
-                    {syncStatusText}
-                  </Text>
-                </View>
-              )}
-
-              <View style={{ gap: SPACING.sm, marginTop: SPACING.sm }}>
-                <Button
-                  title={isTestingCloud ? 'Testing Live Connection...' : 'Test Cloud Connection (Write/Read/Delete)'}
-                  icon={<AppIcon name="analytics" size={16} color={colors.primary} />}
-                  onPress={handleTestCloudConnection}
-                  variant="outline"
-                  loading={isTestingCloud}
-                />
-
-                <PrimaryButton
-                  title={isSyncingCloud ? 'Syncing Collections...' : 'Sync All Data to Cloud (10 Collections)'}
-                  icon={<AppIcon name="upload" size={16} color="#FFFFFF" />}
-                  onPress={handleSyncAllToCloud}
-                  loading={isSyncingCloud}
-                  size="large"
-                />
-              </View>
-            </AppCard>
-
-            <AppCard>
-              <SectionHeader title="Synchronized Business Collections" style={{ marginTop: 0 }} />
-              <Text style={[styles.settingSub, { color: colors.textSecondary, marginBottom: SPACING.sm }]}>
-                The following 10 application collections synchronize with Cloud Firestore:
-              </Text>
-              {[
-                { name: 'users', desc: 'Staff & admin credentials, roles, target amounts' },
-                { name: 'attendance', desc: 'Daily punch-in, punch-out, GPS coords, face-biometrics' },
-                { name: 'leads', desc: 'Customer inquiries, budgets, brand models, follow-up history' },
-                { name: 'mobile_prices', desc: 'Product catalog, purchase & selling prices, revision log' },
-                { name: 'second_hand_purchases', desc: 'Old phone purchases, Aadhaar, IMEI, signatures' },
-                { name: 'second_hand_sales', desc: 'Old phone sales, margin calculations, warranty' },
-                { name: 'sales_targets', desc: 'Monthly sales targets and executive incentives' },
-                { name: 'salary_slips', desc: 'Staff payroll statements, deductions, bonuses' },
-                { name: 'notifications', desc: 'In-app reminders, task follow-ups, system alerts' },
-                { name: 'shop_config', desc: 'Store GPS center, 30m geo-fence radius, opening hours' },
-              ].map((item, idx) => (
-                <View
-                  key={item.name}
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    paddingVertical: 8,
-                    borderBottomWidth: idx === 9 ? 0 : 1,
-                    borderBottomColor: colors.border,
-                  }}
-                >
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={{ fontWeight: '700', fontSize: 13, color: colors.text }}>
-                      /{item.name}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                      {item.desc}
-                    </Text>
-                  </View>
-                  <StatusBadge label="SYNC READY" variant="neutral" size="small" />
-                </View>
-              ))}
-            </AppCard>
-          </>
-        )}
       </ScrollView>
 
       {/* Formal Salary Statement Modal */}
