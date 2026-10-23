@@ -19,6 +19,8 @@ import { MobilePriceItem } from '../types';
 import { Button } from './Button';
 import { formatCurrency } from '../utils/format';
 import { AppIcon } from './AppIcon';
+import { errorCodes, isErrorWithCode, keepLocalCopy, pick, types } from '@react-native-documents/picker';
+import { FileSystem } from 'react-native-file-access';
 
 interface ExcelImportModalProps {
   visible: boolean;
@@ -41,6 +43,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [isImporting, setIsImporting] = useState<boolean>(false);
   const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
   const [screenHeight, setScreenHeight] = useState<number>(Dimensions.get('window').height);
+  const [isPickingFile, setIsPickingFile] = useState<boolean>(false);
+  const [sourceFileName, setSourceFileName] = useState<string>('');
   const scrollViewRef = useRef<any>(null);
   const textInputRef = useRef<any>(null);
 
@@ -70,7 +74,68 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   const handleLoadSample = () => {
     setCsvInput(ExcelService.getSampleData());
+    setSourceFileName('');
     setValidationResult(null);
+  };
+
+  const handlePickFile = async () => {
+    setIsPickingFile(true);
+    try {
+      const [picked] = await pick({
+        type: [types.xlsx, types.xls, types.csv],
+        allowMultiSelection: false,
+        allowVirtualFiles: true,
+        mode: 'import',
+      });
+      const fileName = picked.name || 'spreadsheet';
+      if (picked.size && picked.size > 20 * 1024 * 1024) {
+        throw new Error('This spreadsheet is larger than 20 MB. Please choose a smaller file.');
+      }
+      const namedExtension = fileName.split('.').pop()?.toLowerCase();
+      const extension = ['xlsx', 'xls', 'csv'].includes(namedExtension || '')
+        ? namedExtension
+        : picked.type?.toLowerCase().includes('csv')
+          ? 'csv'
+          : picked.type?.toLowerCase().includes('excel') || picked.type?.toLowerCase().includes('spreadsheet')
+            ? 'xlsx'
+            : namedExtension;
+      if (!picked.hasRequestedType && !['xlsx', 'xls', 'csv'].includes(extension || '')) {
+        throw new Error('Choose an Excel (.xlsx or .xls) or CSV (.csv) file.');
+      }
+
+      const copy = await keepLocalCopy({
+        destination: 'cachesDirectory',
+        files: [{
+          uri: picked.uri,
+          fileName,
+          ...(picked.isVirtual && picked.convertibleToMimeTypes?.[0]?.mimeType
+            ? { convertVirtualFileToType: picked.convertibleToMimeTypes[0].mimeType }
+            : {}),
+        }],
+      });
+      if (copy[0]?.status !== 'success') {
+        throw new Error(copy[0]?.copyError || 'Could not read the selected file.');
+      }
+
+      const localPath = copy[0].localUri.replace(/^file:\/\//, '');
+      let result: ImportValidationResult;
+      if (extension === 'csv') {
+        const csv = await FileSystem.readFile(localPath, 'utf8');
+        setCsvInput(csv);
+        result = await ExcelService.parseCSVString(csv, existingItems);
+      } else {
+        const base64 = await FileSystem.readFile(localPath, 'base64');
+        setCsvInput('');
+        result = await ExcelService.parseXLSXBase64(base64, existingItems);
+      }
+      setSourceFileName(fileName);
+      setValidationResult(result);
+    } catch (error: any) {
+      if (isErrorWithCode(error) && error.code === errorCodes.OPERATION_CANCELED) return;
+      Alert.alert('Could not read spreadsheet', error?.message || 'Select a valid Excel or CSV file and try again.');
+    } finally {
+      setIsPickingFile(false);
+    }
   };
 
   const handleValidate = async () => {
@@ -83,6 +148,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     try {
       const res = await ExcelService.parseCSVString(csvInput, existingItems);
       setValidationResult(res);
+      setSourceFileName('Pasted CSV data');
     } catch (e: any) {
       Alert.alert('Parsing Error', e.message || 'Failed to parse file content.');
     } finally {
@@ -112,6 +178,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               onClose();
               setValidationResult(null);
               setCsvInput('');
+              setSourceFileName('');
             },
           },
         ]
@@ -155,7 +222,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 Smart Excel / CSV Import
               </Text>
               <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                Bulk import 1000+ mobile models & prices with auto-mapping
+                Import Excel and CSV price sheets with automatic column detection
               </Text>
             </View>
             <TouchableOpacity
@@ -181,20 +248,32 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             keyboardShouldPersistTaps="handled"
             nestedScrollEnabled={true}
           >
-            {/* Quick action bar */}
+            {/* Choose a spreadsheet or use paste/sample input */}
             <View style={styles.sampleRow}>
               <Text style={[styles.sectionLabel, { color: colors.text }]}>
                 Excel Sheet Content (CSV / XLSX)
               </Text>
-              <TouchableOpacity
-                onPress={handleLoadSample}
-                style={[styles.sampleBtn, { borderColor: colors.primary }]}
-              >
-                <Text style={[styles.sampleBtnText, { color: colors.primary }]}>
-                  Load Sample Sheet (PDF Example)
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.fileActions}>
+                <TouchableOpacity
+                  onPress={handleLoadSample}
+                  style={[styles.sampleBtn, { borderColor: colors.primary }]}
+                >
+                  <Text style={[styles.sampleBtnText, { color: colors.primary }]}>Load Sample Sheet (PDF Example)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handlePickFile}
+                  disabled={isPickingFile}
+                  style={[styles.sampleBtn, styles.chooseFileBtn, { backgroundColor: colors.primary, borderColor: colors.primary, opacity: isPickingFile ? 0.65 : 1 }]}
+                >
+                  <Text style={[styles.sampleBtnText, { color: '#FFFFFF' }]}>
+                    {isPickingFile ? 'Reading…' : 'Choose Excel / CSV'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
+            <Text style={[styles.helperText, { color: colors.textSecondary }]}>Reads .xlsx, .xls, and .csv on this device. Headers can appear below a title row.</Text>
+
+            <Text style={[styles.sectionLabel, { color: colors.text, marginBottom: 8, marginTop: 12 }]}>Or paste CSV data</Text>
 
             {/* Input area */}
             <TextInput
@@ -240,8 +319,16 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             {/* Validation Results & Preview */}
             {validationResult ? (
               <View style={styles.resultsContainer}>
+                {!!sourceFileName && (
+                  <Text style={[styles.sourceLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+                    Source: {sourceFileName}{validationResult.sheetName ? ` · Sheet: ${validationResult.sheetName}` : ''}
+                  </Text>
+                )}
                 <Text style={[styles.resultTitle, { color: colors.text }]}>
-                  Validation Summary
+                  Clean import preview
+                </Text>
+                <Text style={[styles.helperText, { color: colors.textSecondary, marginBottom: 12 }]}>
+                  Headers detected on row {validationResult.headerRowNumber}: {validationResult.detectedColumns.join(' · ')}
                 </Text>
 
                 {/* Stats Grid */}
@@ -441,11 +528,14 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   sampleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
     marginBottom: 8,
   },
+  fileActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
+  chooseFileBtn: { paddingHorizontal: 12, paddingVertical: 7 },
+  helperText: { fontSize: 12, lineHeight: 17 },
+  sourceLabel: { fontSize: 12, marginBottom: 4 },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
