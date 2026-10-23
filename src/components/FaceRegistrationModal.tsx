@@ -160,9 +160,14 @@ export const FaceRegistrationModal: React.FC<FaceRegistrationModalProps> = ({ vi
               <ShieldCheck size={38} color={colors.primary} />
               <Text style={[styles.heading, { color: colors.text }]}>Privacy and consent</Text>
               <Text style={[styles.hint, { color: colors.textSecondary }]}>The camera captures three live samples. Face matching and liveness checks run on this device. The face embedding is stored in encrypted local storage; camera frames are not saved or uploaded.</Text>
-              <TouchableOpacity style={[styles.consentRow, { borderColor: consentAgreed ? colors.primary : colors.border }]} onPress={() => setConsentAgreed(value => !value)}>
+              <TouchableOpacity
+                style={[styles.consentRow, { borderColor: consentAgreed ? colors.primary : colors.border }]}
+                onPress={() => setConsentAgreed(value => !value)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: consentAgreed }}
+              >
                 <View style={[styles.checkbox, checkboxStyle]}>{consentAgreed ? <Check size={14} color="#fff" /> : null}</View>
-                <Text style={[styles.hint, { color: colors.text }]}>I confirm {staff.name} has given informed consent for biometric attendance.</Text>
+                <Text style={[styles.hint, styles.consentText, { color: colors.text }]}>I confirm {staff.name} has given informed consent for biometric attendance.</Text>
               </TouchableOpacity>
               <TouchableOpacity disabled={!consentAgreed} style={[styles.primaryButton, { backgroundColor: consentAgreed ? colors.primary : colors.border }]} onPress={beginEnrollment}><Text style={styles.primaryText}>Start live enrollment</Text></TouchableOpacity>
             </ScrollView>
@@ -182,8 +187,9 @@ const styles = StyleSheet.create({
   content: { padding: 22, gap: 14, alignItems: 'center' },
   heading: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
   hint: { fontSize: 14, lineHeight: 21, textAlign: 'center' },
-  consentRow: { width: '100%', padding: 12, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  checkbox: { width: 22, height: 22, borderWidth: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
+  consentRow: { width: '100%', padding: 12, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  consentText: { flex: 1, flexShrink: 1, minWidth: 0, textAlign: 'left' },
+  checkbox: { width: 22, height: 22, flexShrink: 0, marginTop: 1, borderWidth: 1, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
   primaryButton: { width: '100%', minHeight: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   primaryText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   secondaryButton: { minHeight: 40, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
