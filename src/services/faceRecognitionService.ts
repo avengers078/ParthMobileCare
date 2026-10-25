@@ -1,12 +1,15 @@
-import { FaceTemplate, FaceVerificationToken, AttendanceAuditLog } from '../types';
+import { FaceTemplate, FaceVerificationToken } from '../types';
 import { sha256, hmacSha256, constantTimeEquals } from '../utils/crypto';
 import { StorageService } from './storageService';
+import { removePersonnel } from 'react-native-offline-face-auth/src/secure/templateStore';
+import { initializeOnDeviceFaceAuth } from './onDeviceFaceAuth';
 
 // Security configuration
 export const BIOMETRIC_CONFIG = {
   VECTOR_DIMENSIONS: 128,
   MATCHING_THRESHOLD: 0.80, // Minimum 80% cosine similarity required
   LIVENESS_THRESHOLD: 0.82, // Minimum anti-spoofing score required
+  ON_DEVICE_LIVENESS_THRESHOLD: 0.5, // Matches the bundled pipeline's 0.5 spoof-probability rejection boundary
   TOKEN_EXPIRY_MS: 60 * 1000, // Tokens valid for 60 seconds
   HMAC_SECRET: 'PMC_BIOMETRIC_HMAC_SECRET_KEY_v1_2026',
   MAX_FAILED_ATTEMPTS: 3,
@@ -131,6 +134,48 @@ export function computeTemplateHash(descriptor: number[]): string {
 }
 
 export class FaceRecognitionService {
+  /** Save enrollment metadata; the actual embedding stays in the encrypted on-device store. */
+  static async registerOnDeviceFaceTemplate(params: {
+    userId: string;
+    userName: string;
+    registeredBy: string;
+    consentObtained: boolean;
+    sampleCount: number;
+  }): Promise<{ success: boolean; template?: FaceTemplate; error?: string }> {
+    if (!params.consentObtained) {
+      return { success: false, error: 'Explicit informed consent is required to register biometric face data.' };
+    }
+    if (!params.userId || !params.userName || params.sampleCount < 1) {
+      return { success: false, error: 'A valid staff account and at least one real camera sample are required.' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const template: FaceTemplate = {
+      id: `tmpl_${params.userId}_${Date.now()}`,
+      userId: params.userId,
+      userName: params.userName,
+      // Embeddings are stored only in FaceAuth's encrypted native store.
+      faceDescriptor: [],
+      qualityScore: 0,
+      registeredAt: nowIso,
+      registeredBy: params.registeredBy,
+      consentObtained: true,
+      consentTimestamp: nowIso,
+      templateHash: computeTemplateHash([]),
+      sampleCount: params.sampleCount,
+      status: 'active',
+    };
+    await StorageService.saveFaceTemplate(template);
+    await StorageService.addAttendanceAuditLog({
+      userId: params.userId,
+      userName: params.userName,
+      action: 'register_face',
+      status: 'success',
+      notes: `On-device face profile enrolled from ${params.sampleCount} live camera samples.`,
+    });
+    return { success: true, template };
+  }
+
   /**
    * Registers a new face template for a staff member with explicit consent
    */
@@ -217,6 +262,8 @@ export class FaceRecognitionService {
     const existing = await StorageService.getFaceTemplate(userId);
     if (!existing) return false;
 
+    await initializeOnDeviceFaceAuth();
+    removePersonnel(userId);
     const success = await StorageService.deleteFaceTemplate(userId, deletedBy);
     if (success) {
       await StorageService.addAttendanceAuditLog({
@@ -428,7 +475,7 @@ export class FaceRecognitionService {
       };
     }
 
-    if (token.livenessScore < BIOMETRIC_CONFIG.LIVENESS_THRESHOLD) {
+    if (token.livenessScore < BIOMETRIC_CONFIG.ON_DEVICE_LIVENESS_THRESHOLD) {
       return {
         valid: false,
         reason: 'Biometric liveness score is below required security threshold.',
@@ -436,39 +483,6 @@ export class FaceRecognitionService {
     }
 
     return { valid: true };
-  }
-
-  /**
-   * Helper to seed standard templates for development & demo testing
-   */
-  static async seedDemoTemplates(): Promise<void> {
-    const existingTemplates = await StorageService.getFaceTemplates();
-    if (existingTemplates.length > 0) return;
-
-    // Seed for Parth Patel (admin) and Ankit Verma (staff)
-    await this.registerFaceTemplate({
-      userId: 'user_admin_1',
-      userName: 'Parth Patel',
-      registeredBy: 'SYSTEM',
-      consentObtained: true,
-      sampleDescriptors: [
-        generateDescriptorFromSeed('face_user_admin_1_sample1', 0.01),
-        generateDescriptorFromSeed('face_user_admin_1_sample2', 0.01),
-      ],
-      qualityScore: 0.98,
-    });
-
-    await this.registerFaceTemplate({
-      userId: 'user_staff_1',
-      userName: 'Ankit Verma',
-      registeredBy: 'user_admin_1',
-      consentObtained: true,
-      sampleDescriptors: [
-        generateDescriptorFromSeed('face_user_staff_1_sample1', 0.01),
-        generateDescriptorFromSeed('face_user_staff_1_sample2', 0.01),
-      ],
-      qualityScore: 0.96,
-    });
   }
 }
 

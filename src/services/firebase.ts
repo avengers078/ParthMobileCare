@@ -1,21 +1,34 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
+import {
+  getAuth,
+  initializeAuth,
+  type Auth,
+} from 'firebase/auth';
+import {
+  deleteDoc,
+  doc,
+  getDoc,
+  getFirestore,
+  setDoc,
+  type Firestore,
+} from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Official ParthMobileCare Firebase Configuration
-// Extracted from android/app/google-services.json
-export const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyBVUJbkmg-ZKXAP2mmkwFYE--c3xua9usY',
-  authDomain: 'parthmobilecare.firebaseapp.com',
-  projectId: 'parthmobilecare',
-  storageBucket: 'parthmobilecare.firebasestorage.app',
-  messagingSenderId: '1974801207',
-  appId: '1:1974801207:android:dd5038dbeeb0be5b8940b2',
-};
+// Firebase's RN-specific persistence export is selected by Metro's
+// react-native resolver condition and is not included in the web type barrel.
+const { getReactNativePersistence } = require('@firebase/auth');
 
-const FIREBASE_CONFIG_KEY = '@pmc_custom_firebase_config';
+// Firebase web config values identify the project; access to data is controlled
+// by Firebase Auth and the project's Firestore/Storage security rules.
+export const DEFAULT_FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyAdvwIbQjNYQQ4E9kgixdyJRlTk9W_GBHY',
+  authDomain: 'parthmobilecare-a474d.firebaseapp.com',
+  projectId: 'parthmobilecare-a474d',
+  storageBucket: 'parthmobilecare-a474d.firebasestorage.app',
+  messagingSenderId: '369865629891',
+  appId: '1:369865629891:android:2e8cbf1f7472691c3e8276',
+};
 
 export interface FirestoreTestResult {
   success: boolean;
@@ -28,162 +41,141 @@ export interface FirestoreTestResult {
 }
 
 class FirebaseService {
-  private static app: any = null;
-  private static isConfigured: boolean = false;
+  private static app: FirebaseApp | null = null;
+  private static auth: Auth | null = null;
+  private static isConfigured = false;
+  private static initPromise: Promise<boolean> | null = null;
 
-  static async init(): Promise<boolean> {
-    try {
-      const savedConfig = await AsyncStorage.getItem(FIREBASE_CONFIG_KEY);
-      const config = savedConfig ? JSON.parse(savedConfig) : DEFAULT_FIREBASE_CONFIG;
-
-      if (!getApps().length) {
-        this.app = initializeApp(config);
-      } else {
-        this.app = getApp();
-      }
-      this.isConfigured = true;
-      return true;
-    } catch (e) {
-      console.warn('Firebase initialized in offline/safe mode:', e);
-      this.isConfigured = false;
-      return false;
-    }
+  private static getOrCreateApp(): FirebaseApp {
+    if (this.app) return this.app;
+    this.app = getApps().length ? getApp() : initializeApp(DEFAULT_FIREBASE_CONFIG);
+    return this.app;
   }
 
-  static getAppInstance() {
-    if (!this.app) {
-      this.init();
-    }
-    return this.app;
+  /** Initialize Firebase before the app's providers start issuing sync calls. */
+  static init(): Promise<boolean> {
+    if (this.initPromise) return this.initPromise;
+
+    const initialization = Promise.resolve().then(async () => {
+      try {
+        const app = this.getOrCreateApp();
+        try {
+          // Persist Firebase Auth sessions across app restarts on React Native.
+          this.auth = initializeAuth(app, {
+            persistence: getReactNativePersistence(AsyncStorage),
+          });
+        } catch (error: any) {
+          // Fast refresh or another module may already have initialized Auth.
+          if (error?.code !== 'auth/already-initialized') throw error;
+          this.auth = getAuth(app);
+        }
+        this.isConfigured = true;
+        return true;
+      } catch (error) {
+        this.isConfigured = false;
+        this.initPromise = null;
+        console.warn('Firebase initialization failed; local data remains available.', error);
+        return false;
+      }
+    });
+
+    this.initPromise = initialization;
+    return initialization;
+  }
+
+  static isReady(): boolean {
+    return this.isConfigured;
+  }
+
+  static getAppInstance(): FirebaseApp {
+    return this.getOrCreateApp();
   }
 
   static getProjectId(): string {
     return DEFAULT_FIREBASE_CONFIG.projectId;
   }
 
-  static getAuth() {
-    if (!this.app) {
-      this.init();
-    }
+  static getAuth(): Auth {
+    const app = this.getOrCreateApp();
+    if (this.auth) return this.auth;
     try {
-      return getAuth(this.app);
+      this.auth = getAuth(app);
     } catch {
-      return null;
+      return initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) });
     }
+    return this.auth;
   }
 
-  static getFirestore() {
-    if (!this.app) {
-      this.init();
-    }
-    try {
-      return getFirestore(this.app);
-    } catch {
-      return null;
-    }
+  static getFirestore(): Firestore {
+    return getFirestore(this.getOrCreateApp());
   }
 
-  static getStorage() {
-    if (!this.app) {
-      this.init();
-    }
-    try {
-      return getStorage(this.app);
-    } catch {
-      return null;
-    }
+  static getStorage(): FirebaseStorage {
+    return getStorage(this.getOrCreateApp());
   }
 
-  static async updateConfig(newConfig: typeof DEFAULT_FIREBASE_CONFIG) {
-    await AsyncStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(newConfig));
-    // Re-initialize app if needed
-  }
-
-  /**
-   * Diagnostic test for runtime Cloud Firestore read/write
-   * Connects to actual Firebase Firestore backend and tests operations
-   */
+  /** Diagnostic probe for the configured project's Cloud Firestore database. */
   static async testFirestoreConnection(): Promise<FirestoreTestResult> {
     const timestamp = new Date().toISOString();
-    const projectId = DEFAULT_FIREBASE_CONFIG.projectId;
+    const projectId = this.getProjectId();
 
     try {
-      await this.init();
-      const db = this.getFirestore();
-      if (!db) {
-        return {
-          success: false,
-          step: 'initialization',
-          projectId,
-          message: 'Firebase app or Firestore could not be initialized.',
-          timestamp,
-        };
-      }
+      if (!(await this.init())) throw new Error('Firebase could not be initialized.');
+      const testDocRef = doc(this.getFirestore(), '_connection_test', 'connectivity_check');
+      const payload = { test: true, source: 'ParthMobileCare App', testedAt: timestamp };
 
-      const testDocRef = doc(db, '_connection_test', 'connectivity_check');
-      const payload = {
-        test: true,
-        source: 'ParthMobileCare App',
-        testedAt: timestamp,
-      };
-
-      // 1. Write Test
       try {
         await setDoc(testDocRef, payload);
-      } catch (writeErr: any) {
-        const isPermission =
-          writeErr?.code === 'permission-denied' ||
-          writeErr?.message?.includes('PERMISSION_DENIED');
+      } catch (error: any) {
+        const permissionDenied = error?.code === 'permission-denied';
         return {
           success: false,
           step: 'write',
           projectId,
-          errorCode: writeErr?.code || (isPermission ? 'permission-denied' : 'unknown'),
-          message: isPermission
-            ? 'Connected to Firebase Firestore backend! (Security rules currently enforcing Production Mode / Authentication)'
-            : writeErr?.message || 'Write operation failed.',
+          errorCode: error?.code || 'write-failed',
+          message: permissionDenied
+            ? 'Firebase is initialized, but Firestore rules denied the diagnostic write. Sign-in and security rules must allow this operation.'
+            : error?.message || 'Firestore write operation failed.',
           timestamp,
         };
       }
 
-      // 2. Read Test
-      let readData: any = null;
+      let readData: any;
       try {
-        const snap = await getDoc(testDocRef);
-        readData = snap.exists() ? snap.data() : null;
-      } catch (readErr: any) {
+        const snapshot = await getDoc(testDocRef);
+        readData = snapshot.exists() ? snapshot.data() : null;
+      } catch (error: any) {
         return {
           success: false,
           step: 'read',
           projectId,
-          errorCode: readErr?.code || 'read-failed',
-          message: readErr?.message || 'Read operation failed.',
+          errorCode: error?.code || 'read-failed',
+          message: error?.message || 'Firestore read operation failed.',
           timestamp,
         };
       }
 
-      // 3. Delete Test (cleanup harmless test record)
       try {
         await deleteDoc(testDocRef);
-      } catch (delErr: any) {
-        console.warn('Test cleanup warning:', delErr);
+      } catch (error) {
+        console.warn('Firestore diagnostic cleanup failed:', error);
       }
 
       return {
         success: true,
         step: 'complete',
         projectId,
-        message: 'Cloud Firestore read, write, and delete operations verified successfully!',
+        message: 'Cloud Firestore read, write, and delete operations verified successfully.',
         timestamp,
         data: readData,
       };
-    } catch (err: any) {
+    } catch (error: any) {
       return {
         success: false,
         step: 'initialization',
         projectId,
-        errorCode: err?.code || 'fatal-error',
-        message: err?.message || 'Unexpected connection error.',
+        errorCode: error?.code || 'initialization-failed',
+        message: error?.message || 'Unexpected Firebase initialization error.',
         timestamp,
       };
     }

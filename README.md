@@ -2,6 +2,22 @@ This is a new [**React Native**](https://reactnative.dev) project, bootstrapped 
 
 # Getting Started
 
+## Face attendance setup
+
+Face enrollment and punch verification use the front camera and on-device TFLite inference. The five model files are bundled under `src/assets/faceModels` (about 61 MB total); no face images are uploaded. Enroll and verify staff on the same device because local templates are not synced to other devices. Android now requires API 26 or later; the iOS deployment target is 15.1.
+
+After installing dependencies, rebuild the native app so Vision Camera, TensorFlow Lite, Worklets, and Keychain are linked:
+
+```sh
+npm install
+cd ios && bundle exec pod install
+cd ..
+npm run android
+# or: npm run ios
+```
+
+Camera-derived debug frame dumps from the face-auth library are disabled by `scripts/patch-face-auth.js`. Recheck that patch whenever the pinned `react-native-offline-face-auth` package version changes.
+
 > **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
 
 ## Step 1: Start Metro

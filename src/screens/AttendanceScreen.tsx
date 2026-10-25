@@ -27,7 +27,6 @@ import {
 } from '../components';
 import { StorageService } from '../services/storageService';
 import { AttendanceService } from '../services/attendanceService';
-import { FaceRecognitionService } from '../services/faceRecognitionService';
 import { calculateDistanceMeters, checkBusinessHours } from '../utils/geo';
 import { AttendanceRecord, GeoPoint, FaceVerificationToken } from '../types';
 import { formatDate, formatTime, getTodayDateString } from '../utils/format';
@@ -85,9 +84,6 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
   };
 
   const loadAttendance = async () => {
-    // Seed demo face templates on initial load if none exist
-    FaceRecognitionService.seedDemoTemplates().catch(() => {});
-
     const targetUserId = (isAdmin || isManager) && selectedStaffId ? selectedStaffId : currentUser?.id;
     if (!targetUserId) return;
 

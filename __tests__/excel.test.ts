@@ -1,3 +1,7 @@
+jest.mock('../src/services/storageService', () => ({
+  StorageService: { saveBulkPriceItems: jest.fn() },
+}));
+
 import { ExcelService } from '../src/services/excelService';
 import { MobilePriceItem } from '../src/types';
 
@@ -54,5 +58,21 @@ Samsung,A15,4GB,64GB,-500,12000`;
     const result = await ExcelService.parseCSVString(invalidCsv, []);
     expect(result.errorRows.length).toBe(2);
     expect(result.validItems.length).toBe(0);
+  });
+
+  test('consolidates duplicate variants with inconsistent spacing and keeps the latest row', async () => {
+    const csv = `Brand,Model,RAM,Storage,Purchase Price,Selling Price
+Vivo,V50,8GB,128GB,22000,24999
+Vivo,V50,8 GB,128 GB,21800,24499`;
+
+    const result = await ExcelService.parseCSVString(csv, []);
+
+    expect(result.totalRowsProcessed).toBe(2);
+    expect(result.duplicateCount).toBe(1);
+    expect(result.validItems).toHaveLength(1);
+    expect(result.validItems[0].ram).toBe('8GB');
+    expect(result.validItems[0].storage).toBe('128GB');
+    expect(result.validItems[0].purchasePrice).toBe(21800);
+    expect(result.validItems[0].sellingPrice).toBe(24499);
   });
 });
