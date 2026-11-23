@@ -1,5 +1,4 @@
 import React from 'react';
-import { Moon, Sun } from 'lucide-react-native';
 import {
   View,
   Text,
@@ -8,11 +7,8 @@ import {
   ViewStyle,
   StyleProp,
 } from 'react-native';
-import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { Badge } from './Badge';
 import { AppIcon } from './AppIcon';
-import { UserRole } from '../types';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
 
 export interface HeaderProps {
@@ -34,14 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   actionRow,
   actionRowStyle,
 }) => {
-  const { role } = useAuth();
-  const { colors, isDark, toggleTheme } = useTheme();
-
-  const getRoleVariant = (r: UserRole) => {
-    if (r === 'admin') return 'danger';
-    if (r === 'manager') return 'warning';
-    return 'primary';
-  };
+  const { colors } = useTheme();
 
   const isCompact = Boolean(showBack && rightAction);
 
@@ -62,43 +51,42 @@ export const Header: React.FC<HeaderProps> = ({
               onPress={onBack}
               style={[styles.backButton, { backgroundColor: colors.borderLight }]}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              accessibilityHint="Returns to previous screen"
+              activeOpacity={0.7}
             >
               <AppIcon name="chevron-left" size={20} color={colors.text} strokeWidth={2.2} />
             </TouchableOpacity>
           ) : null}
 
           <View style={styles.titleArea}>
-            <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+            <Text
+              style={[styles.title, { color: colors.text }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
               {title}
             </Text>
             {subtitle ? (
-              <Text style={[styles.subtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              <Text
+                style={[styles.subtitle, { color: colors.textSecondary }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
                 {subtitle}
               </Text>
             ) : null}
           </View>
         </View>
 
-        <View style={styles.rightContainer}>
-          {!isCompact && rightAction}
-
-          {/* Theme Toggle Button */}
-          <TouchableOpacity
-            style={[styles.themeButton, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
-            onPress={toggleTheme}
-            activeOpacity={0.7}
-          >
-            {isDark ? (
-              <Sun size={16} color={colors.text} strokeWidth={2} />
-            ) : (
-              <Moon size={16} color={colors.text} strokeWidth={2} />
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.roleWrapper}>
-            <Badge label={role} variant={getRoleVariant(role)} size="medium" />
+        {(!isCompact && rightAction) ? (
+          <View style={styles.rightContainer}>
+            {rightAction}
           </View>
-        </View>
+        ) : null}
       </View>
 
       {actionRow ? (
@@ -106,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
           {actionRow}
         </View>
       ) : isCompact && rightAction ? (
-        <View style={[styles.actionRow, actionRowStyle]}>
+        <View style={[styles.actionRow, styles.actionRowStart, actionRowStyle]}>
           {rightAction}
         </View>
       ) : null}
@@ -148,6 +136,7 @@ const styles = StyleSheet.create({
   },
   titleArea: {
     flex: 1,
+    minWidth: 0,
   },
   title: {
     ...TYPOGRAPHY.h2,
@@ -161,24 +150,14 @@ const styles = StyleSheet.create({
   rightContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  themeButton: {
-    borderWidth: 1,
-    borderRadius: RADIUS.full,
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: SPACING.sm,
-  },
-  roleWrapper: {
-    marginLeft: 2,
+    flexShrink: 0,
   },
   actionRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: SPACING.sm,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
     width: '100%',
+    marginTop: SPACING.sm,
   },
   actionRowStart: {
     justifyContent: 'flex-start',

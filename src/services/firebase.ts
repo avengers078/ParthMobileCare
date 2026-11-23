@@ -13,6 +13,7 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
+import { getFunctions, type Functions } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Firebase's RN-specific persistence export is selected by Metro's
@@ -87,6 +88,12 @@ class FirebaseService {
     return this.isConfigured;
   }
 
+  /** Reset initialization promise to allow explicit user retry after connection failure. */
+  static resetInit(): void {
+    this.initPromise = null;
+    this.isConfigured = false;
+  }
+
   static getAppInstance(): FirebaseApp {
     return this.getOrCreateApp();
   }
@@ -112,6 +119,10 @@ class FirebaseService {
 
   static getStorage(): FirebaseStorage {
     return getStorage(this.getOrCreateApp());
+  }
+
+  static getFunctions(region = 'us-central1'): Functions {
+    return getFunctions(this.getOrCreateApp(), region);
   }
 
   /** Diagnostic probe for the configured project's Cloud Firestore database. */

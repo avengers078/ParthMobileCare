@@ -19,14 +19,14 @@ export const BRANDS = [
 export const DEFAULT_SHOP_CONFIG: ShopConfig = {
   shopName: 'Parth Mobile Care',
   tagline: 'Staff & Customer Management System',
-  shopAddress: 'Main Market Road, Near City Center, Surat, Gujarat - 395001',
+  shopAddress: 'Parth Mobile Care, Ahmedabad, Gujarat',
   phone: '+91 98765 43210',
   alternatePhone: '+91 98765 43211',
   email: 'parthmobilecare@gmail.com',
   gstNumber: '24ABCDE1234F1Z5',
-  // Default coordinates (User can update in Settings -> Shop Config)
-  latitude: 21.1702,
-  longitude: 72.8311,
+  // Store Attendance Geofence Coordinates
+  latitude: 23.032588,
+  longitude: 72.661115,
   allowedRadiusMeters: 30, // 30 meters per PDF requirements
   openingTime: '10:00', // 10:00 AM
   closingTime: '21:00', // 09:00 PM
@@ -36,7 +36,7 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'user_admin_1',
     name: 'Parth Patel',
-    email: 'admin@parthmobile.com',
+    email: 'parthmobilecare07@gmail.com',
     phone: '9876543210',
     role: 'admin',
     designation: 'Store Owner & Admin',
@@ -50,7 +50,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Rahul Sharma',
     email: 'manager@parthmobile.com',
     phone: '9876543211',
-    role: 'manager',
+    role: 'staff',
     designation: 'Floor Manager',
     joinedDate: '2023-06-15',
     basicSalary: 35000,
@@ -83,43 +83,6 @@ export const INITIAL_USERS: User[] = [
   },
 ];
 
-export const THEME_COLORS = {
-  light: {
-    primary: '#194D9C',
-    primaryLight: '#EAF2FF',
-    primaryDark: '#123A78',
-    accent: '#22C55E', // Crisp Emerald
-    accentLight: '#F0FDF4',
-    success: '#22C55E',
-    danger: '#EF4444',
-    warning: '#F59E0B',
-    info: '#0EA5E9',
-    background: '#F8FAFC',
-    card: '#FFFFFF',
-    text: '#111827',
-    textSecondary: '#6B7280',
-    textMuted: '#9CA3AF',
-    border: '#E5E7EB',
-    borderLight: '#F1F5F9',
-    statusBar: 'dark-content' as const,
-  },
-  dark: {
-    primary: '#194D9C',
-    primaryLight: 'rgba(37, 99, 235, 0.2)',
-    primaryDark: '#123A78',
-    accent: '#22C55E',
-    accentLight: 'rgba(34, 197, 94, 0.15)',
-    success: '#22C55E',
-    danger: '#EF4444',
-    warning: '#F59E0B',
-    info: '#0EA5E9',
-    background: '#0B0F19',
-    card: '#161F30',
-    text: '#F9FAFB',
-    textSecondary: '#9CA3AF',
-    textMuted: '#6B7280',
-    border: '#1F2937',
-    borderLight: '#18202F',
-    statusBar: 'light-content' as const,
-  },
-};
+// Re-export canonical THEME_COLORS from central theme system for backward compatibility
+export { THEME_COLORS } from '../theme/colors';
+

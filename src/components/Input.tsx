@@ -11,6 +11,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
 import { ModalScrollContext } from './ModalCard';
+import { FormScrollContext } from './ScreenContainer';
 
 export interface InputProps extends TextInputProps {
   label?: string;
@@ -21,7 +22,7 @@ export interface InputProps extends TextInputProps {
   rightIcon?: React.ReactNode;
 }
 
-export const Input: React.FC<InputProps> = ({
+const InputComponent = React.forwardRef<any, InputProps>(({
   label,
   error,
   helperText,
@@ -32,11 +33,12 @@ export const Input: React.FC<InputProps> = ({
   onFocus,
   onBlur,
   ...props
-}) => {
+}, ref) => {
   const { colors, isDark } = useTheme();
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef<any>(null);
   const modalScroll = useContext(ModalScrollContext);
+  const formScroll = useContext(FormScrollContext);
 
   return (
     <View ref={containerRef} style={[styles.container, containerStyle]}>
@@ -56,17 +58,24 @@ export const Input: React.FC<InputProps> = ({
               : isFocused
               ? colors.primary
               : colors.border,
+            borderWidth: isFocused || error ? 1.5 : 1,
           },
         ]}
       >
         {leftIcon ? <View style={styles.iconContainer}>{leftIcon}</View> : null}
         <TextInput
+          ref={ref}
           placeholderTextColor={colors.textMuted}
           style={[styles.input, { color: colors.text }, style]}
+          accessibilityLabel={props.accessibilityLabel || label || props.placeholder}
+          accessibilityState={{ disabled: props.editable === false }}
+          accessibilityHint={error ? `Error: ${error}` : props.accessibilityHint}
           onFocus={(e) => {
             setIsFocused(true);
             if (modalScroll?.scrollToInput && containerRef.current) {
               modalScroll.scrollToInput(containerRef.current);
+            } else if (formScroll?.scrollToInput && containerRef.current) {
+              formScroll.scrollToInput(containerRef.current);
             }
             onFocus && onFocus(e);
           }}
@@ -90,8 +99,9 @@ export const Input: React.FC<InputProps> = ({
       ) : null}
     </View>
   );
-};
+});
 
+export const Input = React.memo(InputComponent);
 export const AppInput = Input;
 
 const styles = StyleSheet.create({

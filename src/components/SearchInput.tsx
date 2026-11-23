@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   TextInput,
@@ -6,17 +6,22 @@ import {
   StyleSheet,
   ViewStyle,
   StyleProp,
+  Keyboard,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
 import { Search, X } from 'lucide-react-native';
 
-interface SearchInputProps {
+export interface SearchInputProps {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
   onClear?: () => void;
+  onSubmitEditing?: () => void;
   style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
 }
 
 export const SearchInput: React.FC<SearchInputProps> = ({
@@ -24,9 +29,14 @@ export const SearchInput: React.FC<SearchInputProps> = ({
   onChangeText,
   placeholder = 'Search customers, models...',
   onClear,
+  onSubmitEditing,
   style,
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
 }) => {
   const { colors, isDark } = useTheme();
+  const [isFocused, setIsFocused] = useState(false);
 
   return (
     <View
@@ -34,12 +44,13 @@ export const SearchInput: React.FC<SearchInputProps> = ({
         styles.container,
         {
           backgroundColor: isDark ? colors.card : '#FFFFFF',
-          borderColor: colors.border,
+          borderColor: isFocused ? colors.primary : colors.border,
+          borderWidth: isFocused ? 1.5 : 1,
         },
         style,
       ]}
     >
-      <Search size={18} color={colors.textMuted} strokeWidth={2} />
+      <Search size={18} color={isFocused ? colors.primary : colors.textMuted} strokeWidth={2} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -49,10 +60,20 @@ export const SearchInput: React.FC<SearchInputProps> = ({
         clearButtonMode="while-editing"
         autoCapitalize="none"
         autoCorrect={false}
+        returnKeyType="search"
+        onSubmitEditing={onSubmitEditing || Keyboard.dismiss}
+        accessibilityRole="search"
+        accessibilityLabel={accessibilityLabel || placeholder}
+        accessibilityHint={accessibilityHint}
+        testID={testID}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
       />
       {value.length > 0 && onClear ? (
         <TouchableOpacity
           onPress={onClear}
+          accessibilityRole="button"
+          accessibilityLabel="Clear search text"
           style={styles.clearBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -76,8 +97,12 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     ...TYPOGRAPHY.body,
+    fontSize: 14,
     paddingVertical: 0,
     height: '100%',
+    marginLeft: SPACING.sm,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   clearBtn: {
     padding: 4,

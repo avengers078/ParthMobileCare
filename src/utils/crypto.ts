@@ -8,8 +8,6 @@ function rightRotate(value: number, amount: number): number {
 }
 
 export function sha256(ascii: string): string {
-  const mathPow = Math.pow;
-  const maxWord = mathPow(2, 32);
   let i = 0;
   let j = 0;
   let result = '';

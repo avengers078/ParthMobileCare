@@ -1,6 +1,16 @@
-import { SecondHandService } from '../src/services/secondHandService';
-import { StorageService } from '../src/services/storageService';
 import { User } from '../src/types';
+
+jest.mock('../src/services/firebase', () => ({
+  __esModule: true,
+  default: {
+    init: jest.fn().mockResolvedValue(true),
+    getAuth: jest.fn(() => ({ currentUser: { uid: 'test_uid' } })),
+    getFirestore: jest.fn(() => ({})),
+    getStorage: jest.fn(() => ({})),
+  },
+}));
+
+import { SecondHandService } from '../src/services/secondHandService';
 
 describe('Second-Hand Mobile Buy, Sell & IMEI Verification', () => {
   const mockStaff: User = {

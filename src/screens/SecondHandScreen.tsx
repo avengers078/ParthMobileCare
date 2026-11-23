@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   Alert,
   ScrollView,
   Share,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -26,12 +28,15 @@ import {
   EmptyState,
   DigitalSignaturePad,
   DocumentCapture,
+  MultiDeviceInspectionCapture,
   SectionHeader,
   AppIcon,
 } from '../components';
+import { CheckCircle2, Check, AlertTriangle, ShieldCheck, Plus, Tag, FileText, Share2, Camera, X } from 'lucide-react-native';
 import { SecondHandPurchase, SecondHandSale } from '../types';
 import { StorageService } from '../services/storageService';
 import { SecondHandService } from '../services/secondHandService';
+import { CloudinaryService } from '../services/cloudinaryService';
 import { formatCurrency, formatDate } from '../utils/format';
 import { sendWhatsAppMessage, MESSAGE_TEMPLATES } from '../utils/whatsapp';
 import { BRANDS } from '../constants';
@@ -83,6 +88,7 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
   const [purCondition, setPurCondition] = useState('Good condition');
   const [purAmount, setPurAmount] = useState('');
   const [purBillUri, setPurBillUri] = useState('');
+  const [deviceInspectionPhotos, setDeviceInspectionPhotos] = useState<string[]>([]);
   const [purSignature, setPurSignature] = useState('');
 
   // Sales Form fields
@@ -99,16 +105,18 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
   const [salePaymentMethod, setSalePaymentMethod] = useState<'UPI' | 'Cash' | 'Card'>('UPI');
   const [saleSignature, setSaleSignature] = useState('');
 
-  const loadData = async () => {
-    const pList = await StorageService.getPurchases();
-    const sList = await StorageService.getSales();
+  const loadData = useCallback(async () => {
+    const [pList, sList] = await Promise.all([
+      StorageService.getPurchases(),
+      StorageService.getSales(),
+    ]);
     setPurchases(pList);
     setSales(sList);
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   // --- Purchase Submit ---
   const handleRecordPurchase = async () => {
@@ -181,6 +189,26 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
     if (!currentUser) return;
 
     try {
+      // If bill was uploaded, ensure it is stored on Cloudinary if configured
+      let finalBillUri: string | undefined = undefined;
+      if (purBillUri) {
+        if (CloudinaryService.isCloudinaryUrl(purBillUri)) {
+          finalBillUri = purBillUri;
+        } else if (CloudinaryService.isConfigured()) {
+          try {
+            const uploadRes = await CloudinaryService.uploadImage(purBillUri, {
+              folder: 'devices',
+              tags: ['pmc_bill', purBrand],
+            });
+            if (uploadRes.success && uploadRes.secureUrl) {
+              finalBillUri = uploadRes.secureUrl;
+            }
+          } catch (uploadErr) {
+            console.warn('[SecondHandScreen] Bill upload to Cloudinary error:', uploadErr);
+          }
+        }
+      }
+
       await SecondHandService.recordPurchase(
         {
           customerName: custName.trim(),
@@ -199,7 +227,9 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
           imei: purImei.trim(),
           condition: purCondition.trim(),
           purchaseAmount: parseFloat(purAmount),
-          billImageUri: purBillUri || undefined,
+          devicePhotos: deviceInspectionPhotos,
+          deviceInspectionPhotos: deviceInspectionPhotos,
+          billImageUri: finalBillUri || undefined,
           digitalSignatureUri: purSignature,
         },
         currentUser
@@ -334,6 +364,8 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
     setPurCondition('Good condition');
     setPurAmount('');
     setPurBillUri('');
+    setDeviceInspectionPhotos([]);
+    setIsUploadingDevicePhoto(false);
     setPurSignature('');
   };
 
@@ -471,6 +503,24 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
                   </Text>
                 </View>
               </View>
+
+              {/* Cloudinary Device Inspection Photos */}
+              {((item.deviceInspectionPhotos && item.deviceInspectionPhotos.length > 0) || (item.devicePhotos && item.devicePhotos.length > 0)) && (
+                <View style={{ marginTop: 8 }}>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 4, fontWeight: '600' }}>
+                    Inspection Photos ({((item.deviceInspectionPhotos || item.devicePhotos) || []).length})
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {((item.deviceInspectionPhotos || item.devicePhotos) || []).map((imgUrl, pIdx) => (
+                      <Image
+                        key={pIdx}
+                        source={{ uri: CloudinaryService.getDeviceThumbnailUrl(imgUrl) }}
+                        style={{ width: 48, height: 48, borderRadius: 6, marginRight: 6, backgroundColor: '#E2E8F0' }}
+                      />
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
 
               {/* Digital Signature Confirmation Badge */}
               <View style={styles.signatureBadgeRow}>
@@ -715,12 +765,13 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
       )}
 
       {/* --- Purchase Modal --- */}
-      <ModalCard
-        visible={purchaseModalVisible}
-        onClose={() => setPurchaseModalVisible(false)}
-        title="Second-Hand Purchase Entry"
-        subtitle="Customer KYC, Device Details & Legal Signature"
-      >
+      {purchaseModalVisible && (
+        <ModalCard
+          visible={purchaseModalVisible}
+          onClose={() => setPurchaseModalVisible(false)}
+          title="Second-Hand Purchase Entry"
+          subtitle="Customer KYC, Device Details & Legal Signature"
+        >
         <Text style={[styles.subSectionTitle, { color: colors.primary }]}>
           1. Customer Information
         </Text>
@@ -821,6 +872,14 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
         <Input label="Device Condition" placeholder="e.g. Excellent, Minor scratch on corner" value={purCondition} onChangeText={setPurCondition} />
         <Input label="Purchase Amount (₹) *" placeholder="e.g. 20000" keyboardType="numeric" value={purAmount} onChangeText={setPurAmount} />
 
+        {/* Device Inspection Photos (Front, Back, Screen, Ports) */}
+        <MultiDeviceInspectionCapture
+          photos={deviceInspectionPhotos}
+          onChange={setDeviceInspectionPhotos}
+          brand={purBrand}
+          maxPhotos={4}
+        />
+
         <DocumentCapture label="Original Bill Upload (Optional)" onCapture={setPurBillUri} currentUri={purBillUri} />
 
         <Text style={[styles.subSectionTitle, { color: colors.primary, marginTop: SPACING.md }]}>
@@ -839,14 +898,16 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
           style={{ marginTop: SPACING.lg }}
         />
       </ModalCard>
+      )}
 
       {/* --- Sales Modal --- */}
-      <ModalCard
-        visible={saleModalVisible}
-        onClose={() => setSaleModalVisible(false)}
-        title="Second-Hand Sale Entry"
-        subtitle="Select Stock Device, Buyer KYC & Billing"
-      >
+      {saleModalVisible && (
+        <ModalCard
+          visible={saleModalVisible}
+          onClose={() => setSaleModalVisible(false)}
+          title="Second-Hand Sale Entry"
+          subtitle="Select Stock Device, Buyer KYC & Billing"
+        >
         <Text style={[styles.subSectionTitle, { color: colors.primary }]}>
           1. Select Available Device from Stock ({inStockList.length})
         </Text>
@@ -977,15 +1038,16 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
           style={{ marginTop: SPACING.lg }}
         />
       </ModalCard>
+      )}
 
       {/* --- Invoice Modal --- */}
-      <ModalCard
-        visible={invoiceModalVisible}
-        onClose={() => setInvoiceModalVisible(false)}
-        title="Tax Invoice"
-        subtitle={selectedSale ? `Invoice #${selectedSale.invoiceNumber}` : ''}
-      >
-        {selectedSale && (
+      {invoiceModalVisible && selectedSale && (
+        <ModalCard
+          visible={invoiceModalVisible}
+          onClose={() => setInvoiceModalVisible(false)}
+          title="Tax Invoice"
+          subtitle={`Invoice #${selectedSale.invoiceNumber}`}
+        >
           <View>
             <View style={[styles.invoiceBox, { backgroundColor: colors.card, borderColor: colors.border }, SHADOWS.card]}>
               <Text style={[styles.invoiceShopName, { color: colors.primary }]}>
@@ -1096,8 +1158,8 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
               </View>
             </View>
           </View>
-        )}
-      </ModalCard>
+        </ModalCard>
+      )}
     </ScreenContainer>
   );
 };

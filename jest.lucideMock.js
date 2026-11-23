@@ -3,7 +3,7 @@ const { View } = require('react-native');
 
 const icon = props => React.createElement(View, props);
 
-module.exports = {
+const icons = {
   Archive: icon,
   ArrowUpRight: icon,
   BarChart3: icon,
@@ -11,6 +11,7 @@ module.exports = {
   BriefcaseBusiness: icon,
   Camera: icon,
   ChevronLeft: icon,
+  ChevronRight: icon,
   ClipboardList: icon,
   Clock3: icon,
   Crown: icon,
@@ -24,6 +25,7 @@ module.exports = {
   MapPin: icon,
   MessageCircle: icon,
   Package: icon,
+  Phone: icon,
   Moon: icon,
   Plus: icon,
   Repeat2: icon,
@@ -42,3 +44,11 @@ module.exports = {
   Wallet: icon,
   XCircle: icon,
 };
+
+module.exports = new Proxy(icons, {
+  get: (target, prop) => {
+    if (prop in target) return target[prop];
+    return icon;
+  },
+});
+

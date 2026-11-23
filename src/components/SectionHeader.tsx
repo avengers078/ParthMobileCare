@@ -7,6 +7,7 @@ import {
   ViewStyle,
   StyleProp,
 } from 'react-native';
+import { ChevronRight } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { SPACING, TYPOGRAPHY } from '../theme';
 
@@ -46,10 +47,12 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
         <TouchableOpacity
           onPress={onActionPress}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
         >
           <Text style={[styles.actionText, { color: colors.primary }]}>
-            {actionText}
+            {actionText.replace(/\s*[→>]\s*$/, '')}
           </Text>
+          <ChevronRight size={14} color={colors.primary} strokeWidth={2.2} />
         </TouchableOpacity>
       ) : null}
     </View>

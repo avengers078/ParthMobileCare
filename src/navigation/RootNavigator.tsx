@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Platform, Pressable, Image, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -14,27 +14,26 @@ import { AppIcon, AppIconName } from '../components';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LeadListScreen } from '../screens/LeadListScreen';
 import { PriceListScreen } from '../screens/PriceListScreen';
-import { ReportsScreen } from '../screens/ReportsScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { AttendanceScreen } from '../screens/AttendanceScreen';
 import { SecondHandScreen } from '../screens/SecondHandScreen';
 import { LoginScreen } from '../screens/LoginScreen';
-import { StaffManagementScreen } from '../screens/StaffManagementScreen';
+import { RegisterScreen } from '../screens/RegisterScreen';
+import { RegistrationStatusScreen } from '../screens/RegistrationStatusScreen';
 import { NotificationsScreen } from '../screens/NotificationsScreen';
 
 const RootStack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Core 5 primary modules for bottom navigation
+// Core 4 primary modules for staff bottom navigation
 const PRIMARY_TABS: Record<string, { label: string; icon: AppIconName }> = {
   HomeTab: { label: 'Home', icon: 'home' },
   LeadsTab: { label: 'Leads', icon: 'users' },
   PriceListTab: { label: 'Prices', icon: 'tag' },
-  ReportsTab: { label: 'Reports', icon: 'analytics' },
   ProfileTab: { label: 'Profile', icon: 'user' },
 };
 
-const CustomBottomTabBar: React.FC<BottomTabBarProps> = ({
+const CustomBottomTabBar: React.FC<BottomTabBarProps> = React.memo(({
   state,
   descriptors,
   navigation,
@@ -50,7 +49,7 @@ const CustomBottomTabBar: React.FC<BottomTabBarProps> = ({
         styles.tabBarContainer,
         {
           backgroundColor: colors.card,
-          borderTopColor: isDark ? colors.border : '#E2E8F0',
+          borderTopColor: colors.border,
           paddingBottom: bottomInset,
           height: 58 + bottomInset,
         },
@@ -84,9 +83,10 @@ const CustomBottomTabBar: React.FC<BottomTabBarProps> = ({
         return (
           <Pressable
             key={route.key}
-            accessibilityRole="button"
-            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isFocused }}
             accessibilityLabel={options.tabBarAccessibilityLabel || config.label}
+            accessibilityHint={isFocused ? 'Currently active tab' : `Switches to ${config.label} tab`}
             testID={options.tabBarButtonTestID}
             onPress={onPress}
             onLongPress={onLongPress}
@@ -101,7 +101,7 @@ const CustomBottomTabBar: React.FC<BottomTabBarProps> = ({
                 isFocused && [
                   styles.activeIconBox,
                   {
-                    backgroundColor: isDark ? 'rgba(37, 99, 235, 0.22)' : '#EFF6FF',
+                    backgroundColor: colors.primaryLight,
                     borderRadius: 14,
                     overflow: 'hidden',
                   },
@@ -132,16 +132,19 @@ const CustomBottomTabBar: React.FC<BottomTabBarProps> = ({
       })}
     </View>
   );
-};
+});
 
-const MainTabs: React.FC = () => {
+const renderCustomTabBar = (props: BottomTabBarProps) => <CustomBottomTabBar {...props} />;
+
+const MainTabs: React.FC = React.memo(() => {
   return (
     <Tab.Navigator
       initialRouteName="HomeTab"
-      tabBar={props => <CustomBottomTabBar {...props} />}
+      tabBar={renderCustomTabBar}
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
+        lazy: true,
       }}
     >
       <Tab.Screen
@@ -160,21 +163,16 @@ const MainTabs: React.FC = () => {
         options={{ tabBarLabel: 'Prices' }}
       />
       <Tab.Screen
-        name="ReportsTab"
-        component={ReportsScreen}
-        options={{ tabBarLabel: 'Reports' }}
-      />
-      <Tab.Screen
         name="ProfileTab"
         component={ProfileScreen}
         options={{ tabBarLabel: 'Profile' }}
       />
     </Tab.Navigator>
   );
-};
+});
 
 export const RootNavigator: React.FC = () => {
-  const { currentUser, isLoading } = useAuth();
+  const { currentUser, authStatus, isLoading, authError, retryAuth, logout, restartRegistration } = useAuth();
   const { colors } = useTheme();
 
   if (isLoading) {
@@ -200,8 +198,158 @@ export const RootNavigator: React.FC = () => {
     );
   }
 
-  if (!currentUser) {
-    return <LoginScreen />;
+  // 1. Role Gatekeeper: Admin/Manager attempting to use Staff-only mobile app
+  if (authStatus === 'unauthorized_role') {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <View style={styles.loadingLogoBox}>
+          <Image source={APP_LOGO} style={styles.loadingLogo} resizeMode="contain" />
+        </View>
+        <View style={[styles.authErrorBadge, { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' }]}>
+          <Text style={[styles.authErrorBadgeText, { color: '#DC2626' }]}>ADMIN ACCESS RESTRICTED</Text>
+        </View>
+        <Text style={[styles.loadingText, { color: colors.text }]}>Web Dashboard Required</Text>
+        <Text style={[styles.loadingCaption, { color: colors.textSecondary, textAlign: 'center', marginTop: 8, marginHorizontal: 20 }]}>
+          Store administrators must manage store operations via the Parth Mobile Care Web Dashboard. This mobile app is exclusively for staff members.
+        </Text>
+        <TouchableOpacity
+          style={[styles.authRetryButton, { backgroundColor: colors.primary }]}
+          onPress={logout}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.authRetryButtonText}>Return to Sign In</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // 2. Inactive Account Gatekeeper
+  if (authStatus === 'inactive') {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <View style={styles.loadingLogoBox}>
+          <Image source={APP_LOGO} style={styles.loadingLogo} resizeMode="contain" />
+        </View>
+        <View style={[styles.authErrorBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+          <Text style={[styles.authErrorBadgeText, { color: '#D97706' }]}>ACCOUNT INACTIVE</Text>
+        </View>
+        <Text style={[styles.loadingText, { color: colors.text }]}>Staff Account Deactivated</Text>
+        <Text style={[styles.loadingCaption, { color: colors.textSecondary, textAlign: 'center', marginTop: 8, marginHorizontal: 20 }]}>
+          Your staff account is currently inactive. Please reach out to your store manager or administrator to reactivate your access.
+        </Text>
+        <TouchableOpacity
+          style={[styles.authRetryButton, { backgroundColor: colors.primary }]}
+          onPress={logout}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.authRetryButtonText}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // 3. Genuine Network or Infrastructure Error
+  if (authStatus === 'error' && authError) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <View style={styles.loadingLogoBox}>
+          <Image
+            source={APP_LOGO}
+            style={styles.loadingLogo}
+            resizeMode="contain"
+          />
+        </View>
+        <View style={styles.authErrorBadge}>
+          <Text style={styles.authErrorBadgeText}>AUTHENTICATION NOTICE</Text>
+        </View>
+        <Text style={[styles.loadingText, { color: colors.text }]}>Authentication Verification</Text>
+        <Text style={[styles.loadingCaption, { color: colors.textSecondary, textAlign: 'center', marginTop: 8, marginHorizontal: 20 }]}>
+          {authError}
+        </Text>
+        <TouchableOpacity
+          style={[styles.authRetryButton, { backgroundColor: colors.primary }]}
+          onPress={retryAuth}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.authRetryButtonText}>Retry Verification</Text>
+        </TouchableOpacity>
+        {authError?.includes('staff profile is missing') && (
+          <TouchableOpacity
+            style={[styles.authRetryButton, { backgroundColor: '#10B981', marginTop: 8 }]}
+            onPress={restartRegistration}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.authRetryButtonText}>Complete Staff Registration</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.authCancelButton, { borderColor: colors.border }]}
+          onPress={logout}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.authCancelButtonText, { color: colors.textSecondary }]}>Return to Sign In</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // 4. Incomplete Registration: Email verification or face enrollment in progress
+  if (
+    authStatus === 'authenticated_unverified' ||
+    authStatus === 'face_enrollment_pending' ||
+    authStatus === 'registration_incomplete'
+  ) {
+    return (
+      <NavigationContainer>
+        <RootStack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        >
+          <RootStack.Screen name="Register" component={RegisterScreen} />
+          <RootStack.Screen name="Login" component={LoginScreen} />
+        </RootStack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
+  // 5. Unauthenticated State
+  if (!currentUser || authStatus === 'unauthenticated') {
+    return (
+      <NavigationContainer>
+        <RootStack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        >
+          <RootStack.Screen name="Login" component={LoginScreen} />
+          <RootStack.Screen name="Register" component={RegisterScreen} />
+        </RootStack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
+  // 6. Registration Pending or Rejected
+  if (
+    authStatus === 'approval_pending' ||
+    authStatus === 'rejected' ||
+    !currentUser.isActive ||
+    currentUser.registrationStatus !== 'approved'
+  ) {
+    return (
+      <NavigationContainer>
+        <RootStack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        >
+          <RootStack.Screen name="RegistrationStatus" component={RegistrationStatusScreen} />
+        </RootStack.Navigator>
+      </NavigationContainer>
+    );
   }
 
   return (
@@ -221,7 +369,6 @@ export const RootNavigator: React.FC = () => {
         <RootStack.Screen name="AttendanceTab" component={AttendanceScreen} />
         <RootStack.Screen name="BuySell" component={SecondHandScreen} />
         <RootStack.Screen name="BuySellTab" component={SecondHandScreen} />
-        <RootStack.Screen name="StaffManagement" component={StaffManagementScreen} />
         <RootStack.Screen name="Notifications" component={NotificationsScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
@@ -261,6 +408,50 @@ const styles = StyleSheet.create({
   loadingCaption: {
     marginTop: 6,
     fontSize: 13,
+  },
+  authErrorBadge: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  authErrorBadgeText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  authRetryButton: {
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  authRetryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  authCancelButton: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  authCancelButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   tabBarContainer: {
     flexDirection: 'row',

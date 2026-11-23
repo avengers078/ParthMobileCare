@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, RefreshCw } from 'lucide-react-native';
+import { Camera } from 'lucide-react-native';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Image,
-  Alert,
   Platform,
   PermissionsAndroid,
   ActivityIndicator,
@@ -18,6 +17,7 @@ import {
   ImageLibraryOptions,
 } from 'react-native-image-picker';
 import { useTheme } from '../context/ThemeContext';
+import { useAlert } from '../context/AlertContext';
 
 interface DocumentCaptureProps {
   label: string;
@@ -37,6 +37,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
   errorMessage,
 }) => {
   const { colors, isDark } = useTheme();
+  const { showAlert, showError, showWarning } = useAlert();
   const [photoUri, setPhotoUri] = useState<string | undefined>(currentUri);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -69,7 +70,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
       if (result === PermissionsAndroid.RESULTS.GRANTED) {
         return true;
       } else {
-        Alert.alert(
+        showWarning(
           'Permission Denied',
           'Camera permission is required to take photos. Please enable camera access in Android App Settings.'
         );
@@ -158,7 +159,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
       }
 
       if (response.errorCode) {
-        Alert.alert(
+        showError(
           'Camera Error',
           response.errorMessage || 'Unable to access camera.'
         );
@@ -171,7 +172,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
         onCapture(selectedUri);
       }
     } catch (error: any) {
-      Alert.alert('Camera Error', error?.message || 'Failed to capture photo.');
+      showError('Camera Error', error?.message || 'Failed to capture photo.');
     } finally {
       setIsLoading(false);
     }
@@ -180,7 +181,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
   const handleLaunchGallery = async () => {
     const hasPermission = await requestGalleryPermission();
     if (!hasPermission) {
-      Alert.alert(
+      showWarning(
         'Permission Denied',
         'Gallery permission was not granted. Please enable gallery access in Android Settings.'
       );
@@ -205,7 +206,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
       }
 
       if (response.errorCode) {
-        Alert.alert(
+        showError(
           'Gallery Error',
           response.errorMessage || 'Unable to open gallery.'
         );
@@ -218,31 +219,32 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
         onCapture(selectedUri);
       }
     } catch (error: any) {
-      Alert.alert('Gallery Error', error?.message || 'Failed to select image from gallery.');
+      showError('Gallery Error', error?.message || 'Failed to select image from gallery.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handlePickDocument = () => {
-    Alert.alert(
-      'Upload Document / Photo',
-      `Choose source for ${label}:`,
-      [
+    showAlert({
+      title: 'Upload Document / Photo',
+      message: `Choose source for ${label}:`,
+      type: 'info',
+      buttons: [
         {
-          text: 'Take Photo (Camera)',
+          text: 'Camera',
           onPress: handleLaunchCamera,
         },
         {
-          text: 'Upload from Gallery',
+          text: 'Gallery',
           onPress: handleLaunchGallery,
         },
         {
           text: 'Cancel',
           style: 'cancel',
         },
-      ]
-    );
+      ],
+    });
   };
 
   const handleRemove = () => {

@@ -94,3 +94,19 @@ key.properties
 # Logs and local files
 *.log
 
+
+# Generated Admin Dashboard build
+admin-dashboard/dist/
+
+# Admin Dashboard local dependencies
+admin-dashboard/node_modules/
+
+# Private business exports and documents
+admin-dashboard/Invoice_*.pdf
+admin-dashboard/Test_Attendance_Export_*.xlsx
+
+# Private Firebase cleanup backup
+scripts/backup_staff_cleanup_20261122.json
+
+# Generated Android React Native bundle
+android/app/src/main/assets/index.android.bundle

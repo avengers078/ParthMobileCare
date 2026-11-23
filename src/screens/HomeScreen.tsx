@@ -6,7 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Alert,
+  useWindowDimensions,
 } from "react-native";
 import {
   ArrowUpRight,
@@ -17,10 +17,8 @@ import {
   DollarSign,
   Lightbulb,
   MapPin,
-  Moon,
   Plus,
   ShoppingCart,
-  Sun,
   Tag,
   TrendingUp,
   Users,
@@ -41,6 +39,7 @@ import { RADIUS, SPACING, SHADOWS, TYPOGRAPHY } from "../theme";
 import { formatCurrency, formatDate, getTodayDateString } from "../utils/format";
 import { StorageService } from "../services/storageService";
 import { LeadService } from "../services/leadService";
+import { NotificationService } from "../services/notificationService";
 import { CustomerLead } from "../types";
 
 interface HomeScreenProps {
@@ -48,9 +47,11 @@ interface HomeScreenProps {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
-  const { currentUser, isAdmin, isManager } = useAuth();
+  const { currentUser } = useAuth();
   const { colors, isDark, toggleTheme } = useTheme();
   const { config } = useShopConfig();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrowScreen = windowWidth < 380;
 
   const [refreshing, setRefreshing] = useState(false);
   const [totalLeadsCount, setTotalLeadsCount] = useState(0);
@@ -75,20 +76,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     date: string;
   }>>([]);
 
+  const isFirstLoadRef = React.useRef(true);
+
   const loadDashboardData = useCallback(async () => {
     try {
       const todayStr = getTodayDateString();
       const currentMonthPrefix = todayStr.substring(0, 7);
 
-      const leads = await StorageService.getLeads();
-      const sales = await StorageService.getSales();
+      const [leads, sales, due, purchases, attRecords] = await Promise.all([
+        StorageService.getLeads(),
+        StorageService.getSales(),
+        LeadService.getDueFollowUps(),
+        StorageService.getPurchases(),
+        currentUser?.id ? StorageService.getAttendanceRecords(currentUser.id) : Promise.resolve([]),
+      ]);
+
       setTotalLeadsCount(leads.length);
       const todayLeads = leads.filter(l => l.createdAt && l.createdAt.startsWith(todayStr));
       setTodayLeadsCount(todayLeads.length);
 
-      // Respect role-based visibility: regular staff sees own leads
-      const userLeads = (!isAdmin && !isManager && currentUser?.id)
-        ? leads.filter(l => l.createdBy === currentUser.id)
+      // Staff-only visibility: staff member sees own leads (created by or assigned to self)
+      const userLeads = currentUser?.id
+        ? leads.filter(l => l.createdBy === currentUser.id || l.assignedTo === currentUser.id)
         : leads;
 
       // 1. Total Leads This Month (created during current calendar month)
@@ -138,17 +147,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       const rate = totalEligible > 0 ? Math.round((mClosedCount / totalEligible) * 100) : 0;
       setConversionRate(rate);
 
-      const due = await LeadService.getDueFollowUps();
-      setDueFollowUps(due);
+      const filteredDue = currentUser?.id
+        ? due.filter(l => l.createdBy === currentUser.id || l.assignedTo === currentUser.id)
+        : due;
+      setDueFollowUps(filteredDue);
+      NotificationService.checkAndTriggerLeadReminders().catch(() => {});
 
-      const todaySales = sales.filter(s => s.saleDate === todayStr);
+      const staffSales = currentUser?.id
+        ? sales.filter(s => s.soldByStaffId === currentUser.id || s.soldByStaffName === currentUser.name)
+        : sales;
+      const todaySales = staffSales.filter(s => s.saleDate === todayStr);
       const totalSalesAmt = todaySales.reduce((acc, s) => acc + (s.sellingAmount || 0), 0);
-      setTodaySalesTotal(totalSalesAmt > 0 ? totalSalesAmt : sales.reduce((acc, s) => acc + (s.sellingAmount || 0), 0));
-
-      const purchases = await StorageService.getPurchases();
+      setTodaySalesTotal(totalSalesAmt > 0 ? totalSalesAmt : staffSales.reduce((acc, s) => acc + (s.sellingAmount || 0), 0));
 
       if (currentUser) {
-        const attRecords = await StorageService.getAttendanceRecords(currentUser.id);
         const todayAtt = attRecords.find(r => r.date === todayStr);
         setAttendanceStatus(todayAtt && todayAtt.punchInTime ? "Punched In" : "Not Punched");
       }
@@ -212,11 +224,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     } catch (e) {
       console.warn("Dashboard load error:", e);
     }
-  }, [currentUser, isAdmin, isManager]);
+  }, [currentUser]);
 
   useEffect(() => {
+    NotificationService.requestNotificationPermission().catch(() => {});
     loadDashboardData();
     const unsubscribe = navigation?.addListener?.('focus', () => {
+      if (isFirstLoadRef.current) {
+        isFirstLoadRef.current = false;
+        return;
+      }
       loadDashboardData();
     });
     return unsubscribe;
@@ -236,6 +253,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           style={styles.headerProfileArea}
           onPress={() => navigation.navigate("ProfileTab")}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={`Profile, ${currentUser?.name || 'Staff Member'}`}
+          accessibilityHint="Navigates to your profile and settings"
         >
           <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
             <Text style={styles.avatarText}>
@@ -255,19 +275,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         <View style={styles.headerRightActions}>
           <TouchableOpacity
             style={[styles.headerIconBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
-            onPress={toggleTheme}
-            activeOpacity={0.7}
-          >
-            {isDark ? <Sun size={17} color={colors.text} /> : <Moon size={17} color={colors.text} />}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.headerIconBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
             onPress={() => navigation.navigate("Notifications")}
             activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel={dueFollowUps.length > 0 ? `Notifications, ${dueFollowUps.length} follow-up calls due` : "Notifications"}
+            accessibilityHint="Opens notification center"
           >
             <Bell size={17} color={colors.text} />
-            {dueFollowUps.length > 0 && <View style={styles.notificationDot} />}
+            {dueFollowUps.length > 0 && (
+              <View style={[styles.notificationDot, { backgroundColor: colors.danger }]} />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -287,7 +305,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         {/* LeadIQ CRM Headline & Focus Banner */}
         <View style={styles.headlineContainer}>
           <Text style={[styles.greetingHeadline, { color: colors.text }]}>
-            Ready to <Text style={{ fontStyle: "italic", color: colors.primary }}>Close Some Deals</Text>
+            Ready to <Text style={{ fontStyle: "italic", color: colors.primary }}>close deals</Text>
           </Text>
           <Text style={[styles.headlineSub, { color: colors.textSecondary }]}>
             {config.shopName || "Parth Mobile Care"} • {formatDate(getTodayDateString())}
@@ -300,11 +318,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           style={[
             styles.insightCard,
             {
-              backgroundColor: isDark ? "rgba(37,99,235,0.12)" : "#EFF6FF",
-              borderColor: isDark ? "rgba(37,99,235,0.3)" : "#BFDBFE",
+              backgroundColor: isDark ? "rgba(25,77,156,0.18)" : colors.primaryLight,
+              borderColor: isDark ? "rgba(25,77,156,0.35)" : "#BFDBFE",
             },
           ]}
           noPadding
+          accessibilityRole="button"
+          accessibilityLabel={dueFollowUps.length > 0 ? `Daily Insight: ${dueFollowUps.length} follow-up calls due today. Tap to view customer leads.` : "Daily Insight: All follow-ups completed for today. Tap to view customer leads."}
+          accessibilityHint="Navigates to customer leads pipeline"
         >
           <View style={styles.insightCardInner}>
             <View style={{ flex: 1 }}>
@@ -318,7 +339,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               </Text>
               <Text style={[styles.insightDesc, { color: colors.textSecondary }]}>
                 {dueFollowUps.length > 0
-                  ? "Contact interested leads promptly to maximize closing conversion rate."
+                  ? "Call interested customers today to close more deals."
                   : "Great job! Check incoming inquiries and recent store sales."}
               </Text>
             </View>
@@ -397,7 +418,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             badgeText="SALES"
             badgeVariant="success"
             valueColor={colors.success}
-            onPress={() => navigation.navigate("ReportsTab")}
+            onPress={() => navigation.navigate("BuySell")}
           />
 
           {/* 5. Monthly Leads */}
@@ -426,7 +447,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         <SectionHeader title="Quick Actions" />
 
         <View style={styles.quickActionsContainer}>
-          {/* Top Row: 2 Primary Cards (Add Lead & Sell Mobile) */}
+          {/* Top Row: 2 Primary Cards (Add Customer & Sell Device) */}
           <View style={styles.topTwoCardsRow}>
             <AnimatedCard
               style={styles.topCard}
@@ -440,9 +461,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   </View>
                   <ArrowUpRight size={18} color={colors.textMuted} />
                 </View>
-                <Text style={[styles.actionTitle, { color: colors.text }]} numberOfLines={1}>Add Lead</Text>
+                <Text style={[styles.actionTitle, { color: colors.text }]} numberOfLines={1}>Add Customer</Text>
                 <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
-                  New customer inquiry
+                  New inquiry
                 </Text>
               </View>
             </AnimatedCard>
@@ -459,109 +480,215 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                   </View>
                   <ArrowUpRight size={18} color={colors.textMuted} />
                 </View>
-                <Text style={[styles.actionTitle, { color: colors.text }]} numberOfLines={1}>Sell Mobile</Text>
+                <Text style={[styles.actionTitle, { color: colors.text }]} numberOfLines={1}>Sell Device</Text>
                 <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
-                  Sell mobile
+                  Sell used phone
                 </Text>
               </View>
             </AnimatedCard>
           </View>
 
-          {/* Bottom Row: 3 Compact Cards (Add Purchase, View Prices, Staff & Roles) */}
-          <View style={styles.bottomThreeCardsRow}>
-            <AnimatedCard
-              style={styles.bottomCard}
-              onPress={() => navigation.navigate("BuySell")}
-              noPadding
-            >
-              <View style={styles.bottomCardInner}>
-                <View style={styles.bottomCardTop}>
-                  <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(245,158,11,0.2)" : "#FFFBEB" }]}>
-                    <ShoppingCart size={17} color={colors.warning} strokeWidth={2.2} />
+          {/* Quick Actions Lower Row: Responsive (Adaptive 2+1 layout on narrow screens, 3-card row on standard/wide) */}
+          {isNarrowScreen ? (
+            <>
+              <View style={styles.narrowTwoCardsRow}>
+                <AnimatedCard
+                  style={styles.bottomCard}
+                  onPress={() => navigation.navigate("BuySell")}
+                  noPadding
+                  accessibilityRole="button"
+                  accessibilityLabel="Buy Device, Buy used phone"
+                >
+                  <View style={styles.bottomCardInner}>
+                    <View style={styles.bottomCardTop}>
+                      <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(245,158,11,0.2)" : colors.warningLight }]}>
+                        <ShoppingCart size={17} color={colors.warning} strokeWidth={2.2} />
+                      </View>
+                      <ArrowUpRight size={15} color={colors.textMuted} />
+                    </View>
+                    <Text
+                      style={[styles.bottomCardTitle, { color: colors.text }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
+                      Buy Device
+                    </Text>
+                    <Text
+                      style={[styles.bottomCardSub, { color: colors.textSecondary }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      Buy used phone
+                    </Text>
                   </View>
-                  <ArrowUpRight size={15} color={colors.textMuted} />
-                </View>
-                <Text style={[styles.bottomCardTitle, { color: colors.text }]} numberOfLines={1}>
-                  Add Purchase
-                </Text>
-                <Text style={[styles.bottomCardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                  Buy 2nd hand
-                </Text>
-              </View>
-            </AnimatedCard>
+                </AnimatedCard>
 
-            <AnimatedCard
-              style={styles.bottomCard}
-              onPress={() => navigation.navigate("PriceListTab")}
-              noPadding
-            >
-              <View style={styles.bottomCardInner}>
-                <View style={styles.bottomCardTop}>
-                  <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(139,92,246,0.2)" : "#F5F3FF" }]}>
-                    <Tag size={17} color="#8B5CF6" strokeWidth={2.2} />
+                <AnimatedCard
+                  style={styles.bottomCard}
+                  onPress={() => navigation.navigate("PriceListTab")}
+                  noPadding
+                  accessibilityRole="button"
+                  accessibilityLabel="Price List, Check phone rates"
+                >
+                  <View style={styles.bottomCardInner}>
+                    <View style={styles.bottomCardTop}>
+                      <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(139,92,246,0.2)" : colors.purpleLight }]}>
+                        <Tag size={17} color={colors.purple} strokeWidth={2.2} />
+                      </View>
+                      <ArrowUpRight size={15} color={colors.textMuted} />
+                    </View>
+                    <Text
+                      style={[styles.bottomCardTitle, { color: colors.text }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
+                      Price List
+                    </Text>
+                    <Text
+                      style={[styles.bottomCardSub, { color: colors.textSecondary }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
+                      Check phone rates
+                    </Text>
                   </View>
-                  <ArrowUpRight size={15} color={colors.textMuted} />
-                </View>
-                <Text style={[styles.bottomCardTitle, { color: colors.text }]} numberOfLines={1}>
-                  View Prices
-                </Text>
-                <Text style={[styles.bottomCardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                  Price catalog
-                </Text>
+                </AnimatedCard>
               </View>
-            </AnimatedCard>
 
-            {(isAdmin || isManager) ? (
+              <AnimatedCard
+                style={styles.narrowFullCard}
+                onPress={() => navigation.navigate("Attendance")}
+                noPadding
+                accessibilityRole="button"
+                accessibilityLabel="Attendance, Check in & history"
+              >
+                <View style={styles.narrowFullCardInner}>
+                  <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(14,165,233,0.2)" : colors.infoLight }]}>
+                    <Clock3 size={17} color={colors.info} strokeWidth={2.2} />
+                  </View>
+                  <View style={styles.narrowFullCardContent}>
+                    <Text style={[styles.actionTitle, { color: colors.text }]} numberOfLines={1}>
+                      Attendance
+                    </Text>
+                    <Text style={[styles.actionSub, { color: colors.textSecondary }]} numberOfLines={1}>
+                      Check in & history
+                    </Text>
+                  </View>
+                  <ArrowUpRight size={18} color={colors.textMuted} />
+                </View>
+              </AnimatedCard>
+            </>
+          ) : (
+            <View style={styles.bottomThreeCardsRow}>
               <AnimatedCard
                 style={styles.bottomCard}
-                onPress={() => navigation.navigate("StaffManagement")}
+                onPress={() => navigation.navigate("BuySell")}
                 noPadding
+                accessibilityRole="button"
+                accessibilityLabel="Buy Device, Buy used phone"
               >
                 <View style={styles.bottomCardInner}>
                   <View style={styles.bottomCardTop}>
-                    <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(14,165,233,0.2)" : "#F0F9FF" }]}>
-                      <Users size={17} color="#0EA5E9" strokeWidth={2.2} />
+                    <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(245,158,11,0.2)" : colors.warningLight }]}>
+                      <ShoppingCart size={17} color={colors.warning} strokeWidth={2.2} />
                     </View>
                     <ArrowUpRight size={15} color={colors.textMuted} />
                   </View>
-                  <Text style={[styles.bottomCardTitle, { color: colors.text }]} numberOfLines={1}>
-                    Staff & Roles
+                  <Text
+                    style={[styles.bottomCardTitle, { color: colors.text }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
+                    Buy Device
                   </Text>
-                  <Text style={[styles.bottomCardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                    Admin team
+                  <Text
+                    style={[styles.bottomCardSub, { color: colors.textSecondary }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    Buy used phone
                   </Text>
                 </View>
               </AnimatedCard>
-            ) : (
+
+              <AnimatedCard
+                style={styles.bottomCard}
+                onPress={() => navigation.navigate("PriceListTab")}
+                noPadding
+                accessibilityRole="button"
+                accessibilityLabel="Price List, Check phone rates"
+              >
+                <View style={styles.bottomCardInner}>
+                  <View style={styles.bottomCardTop}>
+                    <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(139,92,246,0.2)" : colors.purpleLight }]}>
+                      <Tag size={17} color={colors.purple} strokeWidth={2.2} />
+                    </View>
+                    <ArrowUpRight size={15} color={colors.textMuted} />
+                  </View>
+                  <Text
+                    style={[styles.bottomCardTitle, { color: colors.text }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
+                    Price List
+                  </Text>
+                  <Text
+                    style={[styles.bottomCardSub, { color: colors.textSecondary }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    Check phone rates
+                  </Text>
+                </View>
+              </AnimatedCard>
+
               <AnimatedCard
                 style={styles.bottomCard}
                 onPress={() => navigation.navigate("Attendance")}
                 noPadding
+                accessibilityRole="button"
+                accessibilityLabel="Attendance, Check in & history"
               >
                 <View style={styles.bottomCardInner}>
                   <View style={styles.bottomCardTop}>
-                    <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(14,165,233,0.2)" : "#F0F9FF" }]}>
-                      <Clock3 size={17} color="#0EA5E9" strokeWidth={2.2} />
+                    <View style={[styles.bottomIconBox, { backgroundColor: isDark ? "rgba(14,165,233,0.2)" : colors.infoLight }]}>
+                      <Clock3 size={17} color={colors.info} strokeWidth={2.2} />
                     </View>
                     <ArrowUpRight size={15} color={colors.textMuted} />
                   </View>
-                  <Text style={[styles.bottomCardTitle, { color: colors.text }]} numberOfLines={1}>
+                  <Text
+                    style={[styles.bottomCardTitle, { color: colors.text }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
                     Attendance
                   </Text>
-                  <Text style={[styles.bottomCardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                    Punch logs
+                  <Text
+                    style={[styles.bottomCardSub, { color: colors.textSecondary }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    Check in & history
                   </Text>
                 </View>
               </AnimatedCard>
-            )}
-          </View>
+            </View>
+          )}
         </View>
 
         {/* Recent Activity Section */}
         <SectionHeader
           title="Recent Activity"
-          actionText="View All →"
-          onActionPress={() => navigation.navigate("ReportsTab")}
         />
 
         <AppCard noPadding>
@@ -590,10 +717,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
                     {
                       backgroundColor:
                         item.type === "sale"
-                          ? isDark ? "rgba(34,197,94,0.15)" : "#F0FDF4"
+                          ? isDark ? "rgba(34,197,94,0.2)" : colors.accentLight
                           : item.type === "purchase"
-                          ? isDark ? "rgba(245,158,11,0.15)" : "#FFFBEB"
-                          : isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF",
+                          ? isDark ? "rgba(245,158,11,0.2)" : colors.warningLight
+                          : isDark ? "rgba(37,99,235,0.2)" : colors.primaryLight,
                     },
                   ]}
                 >
@@ -785,8 +912,30 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     width: "100%",
   },
+  narrowTwoCardsRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    width: "100%",
+    marginBottom: SPACING.sm,
+  },
+  narrowFullCard: {
+    width: "100%",
+    marginVertical: 0,
+    borderRadius: RADIUS.lg,
+  },
+  narrowFullCardInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: SPACING.md,
+    gap: SPACING.md,
+  },
+  narrowFullCardContent: {
+    flex: 1,
+    minWidth: 0,
+  },
   bottomCard: {
     flex: 1,
+    minWidth: 0,
     marginVertical: 0,
     borderRadius: RADIUS.lg,
   },

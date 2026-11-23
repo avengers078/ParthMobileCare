@@ -75,4 +75,67 @@ Vivo,V50,8 GB,128 GB,21800,24499`;
     expect(result.validItems[0].purchasePrice).toBe(21800);
     expect(result.validItems[0].sellingPrice).toBe(24499);
   });
+
+  test('successfully parses distributor sheets with DP and MOP headers and auto-infers brand from model', async () => {
+    // Typical Indian mobile dealer sheet: Model, DP, MOP (no separate Brand column)
+    const distributorCsv = `Model,RAM,Storage,DP,MOP
+Vivo V50,8GB,128GB,22000,24999
+Galaxy A56,8GB,128GB,25000,27999
+iPhone 16,8GB,128GB,72000,79900`;
+
+    const result = await ExcelService.parseCSVString(distributorCsv, []);
+
+    expect(result.totalRowsProcessed).toBe(3);
+    expect(result.errorRows.length).toBe(0);
+    expect(result.validItems).toHaveLength(3);
+
+    const vivo = result.validItems.find(i => i.brand === 'Vivo');
+    expect(vivo).toBeDefined();
+    expect(vivo?.purchasePrice).toBe(22000);
+    expect(vivo?.sellingPrice).toBe(24999);
+
+    const samsung = result.validItems.find(i => i.brand === 'Samsung');
+    expect(samsung).toBeDefined();
+
+    const apple = result.validItems.find(i => i.brand === 'Apple');
+    expect(apple).toBeDefined();
+  });
+
+  test('extracts RAM and Storage from model string variant pattern when columns are missing', async () => {
+    const csv = `Model,Rate
+Oppo Reno 14 (8GB/256GB),29999
+Realme 14 Pro+ 12/256,28999`;
+
+    const result = await ExcelService.parseCSVString(csv, []);
+
+    expect(result.totalRowsProcessed).toBe(2);
+    expect(result.validItems).toHaveLength(2);
+
+    const oppo = result.validItems.find(i => i.brand === 'Oppo');
+    expect(oppo).toBeDefined();
+    expect(oppo?.ram).toBe('8GB');
+    expect(oppo?.storage).toBe('256GB');
+    expect(oppo?.sellingPrice).toBe(29999);
+    expect(oppo?.purchasePrice).toBe(29999); // Mirrored single price
+  });
+
+  test('successfully parses Inventory sheet exported from Parth Mobile Care Business Report without false price errors', async () => {
+    // Exact columns from user screenshot: S.No, Purchase ID, Brand, Model, RAM / Storage, IMEI, Purchase Cost (₹), Purchase Date, Status, Supplier / Source, Quality Tested
+    const businessReportInventoryCsv = `S.No,Purchase ID,Brand,Model,RAM / Storage,IMEI,Purchase Cost (₹),Purchase Date,Status,Supplier / Source,Quality Tested
+1,pur_1729864200000,Samsung,Galaxy A56,8GB / 128GB,354892019283741,25000,2026-10-25,IN_STOCK,Customer Walk-in,10/10`;
+
+    const result = await ExcelService.parseCSVString(businessReportInventoryCsv, []);
+
+    expect(result.totalRowsProcessed).toBe(1);
+    expect(result.errorRows.length).toBe(0);
+    expect(result.validItems).toHaveLength(1);
+
+    const item = result.validItems[0];
+    expect(item.brand).toBe('Samsung');
+    expect(item.model).toBe('Galaxy A56');
+    expect(item.ram).toBe('8GB');
+    expect(item.storage).toBe('128GB');
+    expect(item.purchasePrice).toBe(25000);
+    expect(item.sellingPrice).toBe(25000);
+  });
 });

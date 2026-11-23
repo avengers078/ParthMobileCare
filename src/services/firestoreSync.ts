@@ -12,6 +12,7 @@ export const FIRESTORE_COLLECTIONS = {
   SALARY_SLIPS: 'salary_slips',
   NOTIFICATIONS: 'notifications',
   SHOP_CONFIG: 'shop_config',
+  DEVICE_CHANGE_REQUESTS: 'device_change_requests',
   CONNECTION_TEST: '_connection_test',
 } as const;
 
@@ -51,15 +52,76 @@ export class FirestoreSyncService {
       const fLib = getFirestoreLib();
       if (!db || !fLib) return false;
 
-      // Remove undefined fields to prevent Firestore serialization errors
+      // Remove undefined fields and local-only flags to prevent Firestore serialization errors
       const sanitized = JSON.parse(JSON.stringify(data));
+      delete sanitized._syncPending;
+
       const docRef = fLib.doc(db, collectionName, docId);
       await fLib.setDoc(docRef, { ...sanitized, _syncedAt: new Date().toISOString() }, { merge: true });
       return true;
     } catch (e: any) {
-      // Graceful offline fallback (app stays 100% responsive without blocking)
-      console.log(`[FirestoreSync] Note: Saved locally. Cloud sync pending for ${collectionName}/${docId}:`, e?.message || e);
+      console.warn(`[FirestoreSync] Write error for ${collectionName}/${docId}:`, e?.message || e);
+      throw e;
+    }
+  }
+
+  /**
+   * Verify document exists in Cloud Firestore
+   */
+  static async verifyDocumentExists(collectionName: string, docId: string): Promise<boolean> {
+    try {
+      const db = FirebaseService.getFirestore();
+      const fLib = getFirestoreLib();
+      if (!db || !fLib) return false;
+
+      const docRef = fLib.doc(db, collectionName, docId);
+      const snap = await fLib.getDoc(docRef);
+      return snap.exists();
+    } catch {
       return false;
+    }
+  }
+
+  /**
+   * Real-time listener for customer leads
+   */
+  static subscribeToLeads(
+    user: any,
+    onUpdate: (leads: any[]) => void,
+    onError?: (error: any) => void
+  ): (() => void) {
+    try {
+      const db = FirebaseService.getFirestore();
+      const fLib = getFirestoreLib();
+      if (!db || !fLib) return () => {};
+
+      const colRef = fLib.collection(db, FIRESTORE_COLLECTIONS.LEADS);
+      const isStaff = user && user.role !== 'admin';
+      const q = isStaff && user?.id
+        ? (fLib.query ? fLib.query(colRef, fLib.where('createdBy', '==', user.id)) : colRef)
+        : colRef;
+
+      if (!fLib.onSnapshot) return () => {};
+
+      const unsubscribe = fLib.onSnapshot(
+        q,
+        (snapshot: any) => {
+          const records: any[] = [];
+          snapshot.forEach((docSnap: any) => {
+            records.push({ ...docSnap.data(), id: docSnap.id });
+          });
+          onUpdate(records);
+        },
+        (error: any) => {
+          console.warn('[FirestoreSync] Leads real-time subscription error:', error);
+          onError?.(error);
+        }
+      );
+
+      return unsubscribe;
+    } catch (e) {
+      console.warn('[FirestoreSync] Failed to initialize leads subscription:', e);
+      return () => {};
     }
   }
 
@@ -119,21 +181,93 @@ export class FirestoreSyncService {
     }
   }
 
-  /** Pull cloud records into the local cache after Firebase authentication. */
-  static async pullAllCloudToLocal(): Promise<Record<string, number>> {
-    const collections = [
-      FIRESTORE_COLLECTIONS.USERS,
-      FIRESTORE_COLLECTIONS.ATTENDANCE,
-      FIRESTORE_COLLECTIONS.LEADS,
+  /**
+   * Fetch scoped collection with a where query
+   */
+  static async fetchCollectionWithQuery<T>(collectionName: string, field: string, op: any, value: any): Promise<T[]> {
+    try {
+      const db = FirebaseService.getFirestore();
+      const fLib = getFirestoreLib();
+      if (!db || !fLib) return [];
+
+      const colRef = fLib.collection(db, collectionName);
+      const q = fLib.query ? fLib.query(colRef, fLib.where(field, op, value)) : colRef;
+      const snapshot = await fLib.getDocs(q);
+      const records: T[] = [];
+      snapshot.forEach((docSnap: any) => {
+        records.push({ ...docSnap.data(), id: docSnap.id } as T);
+      });
+      return records;
+    } catch (e: any) {
+      console.log(`[FirestoreSync] Scoped query fallback for ${collectionName}:`, e?.message || e);
+      return [];
+    }
+  }
+
+  /** Pull cloud records into the local cache after Firebase authentication, scoped by role. */
+  static async pullAllCloudToLocal(currentUser?: any): Promise<Record<string, number>> {
+    const isStaff = currentUser && currentUser.role !== 'admin';
+    const collectionsToPull: string[] = [
+      FIRESTORE_COLLECTIONS.SHOP_CONFIG,
       FIRESTORE_COLLECTIONS.MOBILE_PRICES,
       FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES,
       FIRESTORE_COLLECTIONS.SECOND_HAND_SALES,
-      FIRESTORE_COLLECTIONS.SALES_TARGETS,
-      FIRESTORE_COLLECTIONS.SALARY_SLIPS,
-      FIRESTORE_COLLECTIONS.NOTIFICATIONS,
-      FIRESTORE_COLLECTIONS.SHOP_CONFIG,
     ];
-    const results = await Promise.all(collections.map(async name => [name, await this.pullCollectionAndMerge(name)] as const));
+
+    if (!isStaff) {
+      // Admin pulls all collections
+      collectionsToPull.push(
+        FIRESTORE_COLLECTIONS.NOTIFICATIONS,
+        FIRESTORE_COLLECTIONS.USERS,
+        FIRESTORE_COLLECTIONS.ATTENDANCE,
+        FIRESTORE_COLLECTIONS.LEADS,
+        FIRESTORE_COLLECTIONS.SALES_TARGETS,
+        FIRESTORE_COLLECTIONS.SALARY_SLIPS
+      );
+      const results = await Promise.all(collectionsToPull.map(async name => [name, await this.pullCollectionAndMerge(name)] as const));
+      return Object.fromEntries(results);
+    }
+
+    // Scoped pull for staff: only pull own attendance, own leads, own salary slips, and authorized notifications
+    const results: [string, number][] = await Promise.all(
+      collectionsToPull.map(async name => [name, await this.pullCollectionAndMerge(name)] as const)
+    );
+
+    if (currentUser?.id) {
+      // Pull own notifications & broadcast announcements & targeted staff announcements
+      const ownNotifs = await this.fetchCollectionWithQuery<any>(FIRESTORE_COLLECTIONS.NOTIFICATIONS, 'userId', '==', currentUser.id);
+      const broadcastNotifs = await this.fetchCollectionWithQuery<any>(FIRESTORE_COLLECTIONS.NOTIFICATIONS, 'userId', '==', 'all');
+      const targetedNotifs = await this.fetchCollectionWithQuery<any>(FIRESTORE_COLLECTIONS.NOTIFICATIONS, 'targetStaffIds', 'array-contains', currentUser.id).catch(() => []);
+      const combinedNotifs = [...ownNotifs];
+      [...broadcastNotifs, ...targetedNotifs].forEach(n => {
+        // Staff should only receive published or scheduled announcements (not drafts or archived)
+        if (n.status === 'draft' || n.status === 'archived') return;
+        if (!combinedNotifs.some(c => c.id === n.id)) combinedNotifs.push(n);
+      });
+      if (combinedNotifs.length) await StorageService.mergeCloudCollection(FIRESTORE_COLLECTIONS.NOTIFICATIONS, combinedNotifs);
+      results.push([FIRESTORE_COLLECTIONS.NOTIFICATIONS, combinedNotifs.length]);
+
+      // Pull own attendance
+      const ownAtt = await this.fetchCollectionWithQuery<any>(FIRESTORE_COLLECTIONS.ATTENDANCE, 'userId', '==', currentUser.id);
+      if (ownAtt.length) await StorageService.mergeCloudCollection(FIRESTORE_COLLECTIONS.ATTENDANCE, ownAtt);
+      results.push([FIRESTORE_COLLECTIONS.ATTENDANCE, ownAtt.length]);
+
+      // Pull own leads (createdBy or assignedTo)
+      const ownCreatedLeads = await this.fetchCollectionWithQuery<any>(FIRESTORE_COLLECTIONS.LEADS, 'createdBy', '==', currentUser.id);
+      const ownAssignedLeads = await this.fetchCollectionWithQuery<any>(FIRESTORE_COLLECTIONS.LEADS, 'assignedTo', '==', currentUser.id);
+      const combinedLeads = [...ownCreatedLeads];
+      ownAssignedLeads.forEach(l => {
+        if (!combinedLeads.some(c => c.id === l.id)) combinedLeads.push(l);
+      });
+      if (combinedLeads.length) await StorageService.mergeCloudCollection(FIRESTORE_COLLECTIONS.LEADS, combinedLeads);
+      results.push([FIRESTORE_COLLECTIONS.LEADS, combinedLeads.length]);
+
+      // Pull own salary slips
+      const ownSalaries = await this.fetchCollectionWithQuery<any>(FIRESTORE_COLLECTIONS.SALARY_SLIPS, 'userId', '==', currentUser.id);
+      if (ownSalaries.length) await StorageService.mergeCloudCollection(FIRESTORE_COLLECTIONS.SALARY_SLIPS, ownSalaries);
+      results.push([FIRESTORE_COLLECTIONS.SALARY_SLIPS, ownSalaries.length]);
+    }
+
     return Object.fromEntries(results);
   }
 

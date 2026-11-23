@@ -8,6 +8,8 @@ import {
   TextStyle,
   StyleProp,
   View,
+  AccessibilityRole,
+  Insets,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
@@ -22,9 +24,14 @@ export interface ButtonProps {
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
   icon?: React.ReactNode;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
+  hitSlop?: Insets | number;
 }
 
-export const Button: React.FC<ButtonProps> = ({
+export const Button: React.FC<ButtonProps> = React.memo(({
   title,
   onPress,
   variant = 'primary',
@@ -34,6 +41,11 @@ export const Button: React.FC<ButtonProps> = ({
   style,
   textStyle,
   icon,
+  accessibilityRole = 'button',
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
+  hitSlop,
 }) => {
   const { colors, isDark } = useTheme();
 
@@ -115,11 +127,27 @@ export const Button: React.FC<ButtonProps> = ({
     }
   };
 
+  const defaultHitSlop: Insets | undefined =
+    size === 'small'
+      ? { top: 4, bottom: 4, left: 4, right: 4 }
+      : size === 'medium'
+      ? { top: 2, bottom: 2, left: 2, right: 2 }
+      : undefined;
+
   return (
     <TouchableOpacity
       activeOpacity={0.75}
       onPress={onPress}
       disabled={disabled || loading}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel || title}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{
+        disabled: Boolean(disabled || loading),
+        busy: Boolean(loading),
+      }}
+      testID={testID}
+      hitSlop={hitSlop !== undefined ? hitSlop : defaultHitSlop}
       style={[
         styles.button,
         getContainerStyle(),
@@ -141,6 +169,9 @@ export const Button: React.FC<ButtonProps> = ({
               size === 'large' && styles.textLarge,
               textStyle,
             ]}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
           >
             {title}
           </Text>
@@ -148,15 +179,19 @@ export const Button: React.FC<ButtonProps> = ({
       )}
     </TouchableOpacity>
   );
-};
+});
 
-export const PrimaryButton: React.FC<Omit<ButtonProps, 'variant'>> = (props) => (
+export const PrimaryButton: React.FC<Omit<ButtonProps, 'variant'>> = React.memo((props) => (
   <Button {...props} variant="primary" />
-);
+));
 
-export const SecondaryButton: React.FC<Omit<ButtonProps, 'variant'>> = (props) => (
+export const SecondaryButton: React.FC<Omit<ButtonProps, 'variant'>> = React.memo((props) => (
   <Button {...props} variant="secondary" />
-);
+));
+
+export const OutlineButton: React.FC<Omit<ButtonProps, 'variant'>> = React.memo((props) => (
+  <Button {...props} variant="outline" />
+));
 
 export interface IconButtonProps {
   icon: React.ReactNode;
@@ -165,23 +200,46 @@ export interface IconButtonProps {
   backgroundColor?: string;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
+  hitSlop?: Insets | number;
 }
 
-export const IconButton: React.FC<IconButtonProps> = ({
+export const IconButton: React.FC<IconButtonProps> = React.memo(({
   icon,
   onPress,
   size = 40,
   backgroundColor,
   style,
   disabled = false,
+  accessibilityRole = 'button',
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
+  hitSlop,
 }) => {
   const { colors } = useTheme();
+
+  // If size < 48, default hitSlop expands touch area to 48x48
+  const slopDelta = Math.max(0, Math.ceil((48 - size) / 2));
+  const defaultHitSlop: Insets | undefined =
+    slopDelta > 0
+      ? { top: slopDelta, bottom: slopDelta, left: slopDelta, right: slopDelta }
+      : undefined;
 
   return (
     <TouchableOpacity
       activeOpacity={0.7}
       onPress={onPress}
       disabled={disabled}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled }}
+      testID={testID}
+      hitSlop={hitSlop !== undefined ? hitSlop : defaultHitSlop}
       style={[
         styles.iconButton,
         {
@@ -199,21 +257,26 @@ export const IconButton: React.FC<IconButtonProps> = ({
       {icon}
     </TouchableOpacity>
   );
-};
+});
 
 const styles = StyleSheet.create({
   button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    maxWidth: '100%',
   },
   contentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 1,
+    maxWidth: '100%',
+    paddingHorizontal: 2,
   },
   iconBox: {
     marginRight: SPACING.sm,
+    flexShrink: 0,
   },
   iconButton: {
     alignItems: 'center',
@@ -222,6 +285,8 @@ const styles = StyleSheet.create({
   text: {
     ...TYPOGRAPHY.button,
     letterSpacing: 0.1,
+    flexShrink: 1,
+    textAlign: 'center',
   },
   textSmall: {
     fontSize: 13,

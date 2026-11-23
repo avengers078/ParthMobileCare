@@ -1,0 +1,85 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ===============================================================
+    // Parth Mobile Care — Firebase Storage Security Rules
+    // Protects KYC Aadhaar cards, customer photos, signatures, and salary records
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        ('role' in request.auth.token && request.auth.token.role == 'admin') ||
+        ('email' in request.auth.token && request.auth.token.email == 'admin@parthmobile.com')
+      );
+    }
+
+    function isManagerOrAdmin() {
+      return isAdmin();
+    }
+
+    function isValidImage() {
+      return request.resource != null &&
+             request.resource.contentType.matches('image/.*') &&
+             request.resource.size > 0 &&
+             request.resource.size <= 10 * 1024 * 1024; // Max 10MB
+    }
+
+    function isValidDocument() {
+      return request.resource != null &&
+             (request.resource.contentType.matches('image/.*') ||
+              request.resource.contentType == 'application/pdf') &&
+             request.resource.size > 0 &&
+             request.resource.size <= 15 * 1024 * 1024; // Max 15MB
+    }
+
+    // 1. Staff Profile Avatars
+    match /avatars/{userId}/{fileName} {
+      // Authenticated users can view teammate avatars; user or admin can upload
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isManagerOrAdmin()) && isValidImage();
+      allow delete: if isAuthenticated() && (request.auth.uid == userId || isManagerOrAdmin());
+    }
+
+    // 2. Sensitive Customer KYC Documents (Aadhaar Front, Aadhaar Back, Customer Photo)
+    // STRICT: Never publicly accessible. Only authenticated store staff/manager/admin.
+    match /kyc/{purchaseId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidDocument();
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 3. Customer Digital Signatures (Second Hand Purchase & Sale Compliance)
+    // STRICT: Never publicly accessible. Only authenticated staff/manager/admin.
+    match /signatures/{recordId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidImage();
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 4. Employee Salary Slips & Monthly Financial Statements
+    // STRICT: Confidential. Accessible ONLY to the specific employee or Store Admin/Manager.
+    match /salary_slips/{staffId}/{fileName} {
+      allow read: if isAuthenticated() && (request.auth.uid == staffId || isManagerOrAdmin());
+      allow write: if isAdmin() && isValidDocument();
+      allow delete: if isAdmin();
+    }
+
+    // 5. Store Sales Invoices & Customer Receipts
+    match /invoices/{invoiceNo}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidDocument();
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // 6. Default Deny: Block all unauthenticated access and unknown directories
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

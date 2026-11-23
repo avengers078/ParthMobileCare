@@ -1,21 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Alert,
   ScrollView,
+  Platform,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { Plus, Check, ArrowUpRight, Pencil, Trash2, Camera, X } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAlert } from '../context/AlertContext';
 import {
   ScreenContainer,
   AppHeader,
   AppCard,
   StatusBadge,
-  Button,
   PrimaryButton,
   Input,
   SearchInput,
@@ -24,14 +29,16 @@ import {
   SectionHeader,
   EmptyState,
   AppIcon,
+  DocumentCapture,
 } from '../components';
 import { CustomerLead, LeadStatus } from '../types';
 import { StorageService } from '../services/storageService';
 import { LeadService } from '../services/leadService';
+import { CloudinaryService } from '../services/cloudinaryService';
+import { FirestoreSyncService, FIRESTORE_COLLECTIONS } from '../services/firestoreSync';
 import {
   formatCurrency,
   formatDate,
-  getTodayDateString,
   toDisplayDate,
   toStorageDate,
   getTodayDisplayDate,
@@ -41,7 +48,6 @@ import { sendWhatsAppMessage, makePhoneCall, MESSAGE_TEMPLATES } from '../utils/
 import { BRANDS } from '../constants';
 import { RADIUS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 import {
-  MOBILE_NUMBER_ERROR_MESSAGE,
   getMobileNumberError,
   sanitizeMobileNumber,
   validateMobileNumber,
@@ -72,8 +78,13 @@ const isTimePastForToday = (displayDate: string, timeStr: string): boolean => {
 };
 
 export const LeadListScreen: React.FC = () => {
-  const { currentUser } = useAuth();
+  const navigation = useNavigation<any>();
+  const { currentUser, isAdmin } = useAuth();
   const { colors, isDark } = useTheme();
+  const { showSuccess, showError, showWarning, showConfirm } = useAlert();
+  // Since LeadListScreen is rendered inside Tab.Navigator, the screen ends right at the top
+  // of the bottom tab bar. A clean 16dp margin positions the FAB naturally above the tab bar.
+  const fabBottom = SPACING.lg;
 
   const [leads, setLeads] = useState<CustomerLead[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('All');
@@ -93,11 +104,20 @@ export const LeadListScreen: React.FC = () => {
   const [model, setModel] = useState('');
   const [budget, setBudget] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [inquiryPhotos, setInquiryPhotos] = useState<string[]>([]);
+  const [isUploadingInquiryPhoto, setIsUploadingInquiryPhoto] = useState(false);
   const [followUpDate, setFollowUpDate] = useState(getTodayDisplayDate());
   const [followUpDateError, setFollowUpDateError] = useState('');
   const [followUpTime, setFollowUpTime] = useState('05:00 PM');
   const [followUpTimeError, setFollowUpTimeError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Field refs for error autofocus
+  const nameInputRef = useRef<any>(null);
+  const phoneInputRef = useRef<any>(null);
+  const altPhoneInputRef = useRef<any>(null);
+  const followUpDateInputRef = useRef<any>(null);
+  const followUpTimeInputRef = useRef<any>(null);
 
   // Edit Form state
   const [editName, setEditName] = useState('');
@@ -109,29 +129,66 @@ export const LeadListScreen: React.FC = () => {
   const [editModel, setEditModel] = useState('');
   const [editBudget, setEditBudget] = useState('');
   const [editRemarks, setEditRemarks] = useState('');
+  const [editInquiryPhotos, setEditInquiryPhotos] = useState<string[]>([]);
+  const [isUploadingEditInquiryPhoto, setIsUploadingEditInquiryPhoto] = useState(false);
   const [editFollowUpDate, setEditFollowUpDate] = useState('');
   const [editFollowUpDateError, setEditFollowUpDateError] = useState('');
   const [editFollowUpTime, setEditFollowUpTime] = useState('05:00 PM');
   const [editFollowUpTimeError, setEditFollowUpTimeError] = useState('');
 
-  const loadLeads = async () => {
-    const list = await StorageService.getLeads();
-    setLeads(list);
-  };
+  const isFirstLoadRef = useRef(true);
 
+  const loadLeads = useCallback(async () => {
+    if (!currentUser) return;
+    const list = await LeadService.getLeadsForUser(currentUser);
+    setLeads(list);
+  }, [currentUser]);
+
+  // Reload leads on initial mount and whenever this screen regains focus
   useEffect(() => {
     loadLeads();
-  }, []);
+    const unsubscribeFocus = navigation?.addListener?.('focus', () => {
+      if (isFirstLoadRef.current) {
+        isFirstLoadRef.current = false;
+        return; // Prevent redundant double load on initial mount
+      }
+      loadLeads();
+    });
+    return unsubscribeFocus;
+  }, [navigation, loadLeads]);
+
+  // Real-time synchronization with Cloud Firestore
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubscribeSnapshot = FirestoreSyncService.subscribeToLeads(
+      currentUser,
+      async (remoteLeads) => {
+        if (remoteLeads && remoteLeads.length > 0) {
+          await StorageService.mergeCloudCollection(FIRESTORE_COLLECTIONS.LEADS, remoteLeads);
+          const list = await LeadService.getLeadsForUser(currentUser);
+          setLeads(list);
+        }
+      },
+      (err) => {
+        console.warn('[LeadListScreen] Cloud leads subscription error:', err);
+      }
+    );
+    return () => {
+      if (unsubscribeSnapshot) unsubscribeSnapshot();
+    };
+  }, [currentUser]);
 
   const handleCreateLead = async () => {
     if (!name.trim()) {
-      Alert.alert('Validation Error', 'Customer name is required.');
+      nameInputRef.current?.focus();
+      showWarning('Validation Error', 'Customer name is required.');
       return;
     }
     const phoneErr = getMobileNumberError(phone, true);
     if (phoneErr) {
       setPhoneError(phoneErr);
-      Alert.alert('Validation Error', phoneErr);
+      phoneInputRef.current?.focus();
+      showWarning('Validation Error', phoneErr);
       return;
     }
     setPhoneError('');
@@ -139,7 +196,8 @@ export const LeadListScreen: React.FC = () => {
     const altErr = getMobileNumberError(altPhone, false);
     if (altErr) {
       setAltPhoneError(altErr);
-      Alert.alert('Validation Error', altErr);
+      altPhoneInputRef.current?.focus();
+      showWarning('Validation Error', altErr);
       return;
     }
     setAltPhoneError('');
@@ -148,7 +206,8 @@ export const LeadListScreen: React.FC = () => {
     if (followUpDate.trim()) {
       if (!/^\d{2}-\d{2}-\d{4}$/.test(followUpDate.trim())) {
         setFollowUpDateError('Enter date in DD-MM-YYYY format (e.g. 09-10-2026).');
-        Alert.alert('Validation Error', 'Enter date in DD-MM-YYYY format (e.g. 09-10-2026).');
+        followUpDateInputRef.current?.focus();
+        showWarning('Validation Error', 'Enter date in DD-MM-YYYY format (e.g. 09-10-2026).');
         return;
       }
       setFollowUpDateError('');
@@ -157,7 +216,8 @@ export const LeadListScreen: React.FC = () => {
 
     if (followUpDate.trim() && isTimePastForToday(followUpDate.trim(), followUpTime)) {
       setFollowUpTimeError('Reminder time cannot be in the past for today.');
-      Alert.alert('Invalid Time', 'Reminder time cannot be in the past for today.');
+      followUpTimeInputRef.current?.focus();
+      showWarning('Invalid Time', 'Reminder time cannot be in the past for today.');
       return;
     }
     setFollowUpTimeError('');
@@ -175,6 +235,8 @@ export const LeadListScreen: React.FC = () => {
           interestedModel: model.trim() || 'General Inquiry',
           budget: parseFloat(budget) || 0,
           remarks: remarks.trim(),
+          inquiryPhotos: inquiryPhotos.length > 0 ? inquiryPhotos : undefined,
+          repairPhotos: inquiryPhotos.length > 0 ? inquiryPhotos : undefined,
           followUpDate: finalStorageDate,
           followUpTime: followUpTime || undefined,
           createdBy: currentUser.id,
@@ -182,25 +244,23 @@ export const LeadListScreen: React.FC = () => {
         },
         currentUser,
         'new',
-        true
+        false // Do not disrupt form workflow with external app intent redirects
       );
 
-      Alert.alert(
+      // Immediately refresh leads in local state so the new lead is visible right away
+      await loadLeads();
+
+      // Dismiss modal and reset form
+      setAddModalVisible(false);
+      resetForm();
+
+      showSuccess(
         'Lead Created!',
-        'Customer lead registered and automated follow-up reminder scheduled.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setAddModalVisible(false);
-              resetForm();
-              loadLeads();
-            },
-          },
-        ]
+        'Customer lead registered and automated follow-up reminder scheduled.'
       );
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to save lead.');
+      showError('Error', e.message || 'Failed to save lead.');
+      // Form fields and modal remain open so data is preserved for retry
     } finally {
       setIsSubmitting(false);
     }
@@ -218,10 +278,10 @@ export const LeadListScreen: React.FC = () => {
       if (updated) {
         setSelectedLead(updated);
         loadLeads();
-        Alert.alert('Status Updated', `Lead status is now ${newStatus.toUpperCase()}`);
+        showSuccess('Status Updated', `Lead status is now ${newStatus.toUpperCase()}`);
       }
     } catch (e: any) {
-      Alert.alert('Update Failed', e.message);
+      showError('Update Failed', e);
     }
   };
 
@@ -236,6 +296,8 @@ export const LeadListScreen: React.FC = () => {
     setEditModel(lead.interestedModel);
     setEditBudget(lead.budget.toString());
     setEditRemarks(lead.remarks);
+    setEditInquiryPhotos(lead.inquiryPhotos || lead.repairPhotos || []);
+    setIsUploadingEditInquiryPhoto(false);
     setEditFollowUpDate(lead.followUpDate ? toDisplayDate(lead.followUpDate) : '');
     setEditFollowUpDateError('');
     setEditFollowUpTime(lead.followUpTime ? formatTime(lead.followUpTime) : '05:00 PM');
@@ -247,13 +309,13 @@ export const LeadListScreen: React.FC = () => {
   const handleSaveEdit = async () => {
     if (!selectedLead || !currentUser) return;
     if (!editName.trim()) {
-      Alert.alert('Validation Error', 'Customer name is required.');
+      showWarning('Validation Error', 'Customer name is required.');
       return;
     }
     const phoneErr = getMobileNumberError(editPhone, true);
     if (phoneErr) {
       setEditPhoneError(phoneErr);
-      Alert.alert('Validation Error', phoneErr);
+      showWarning('Validation Error', phoneErr);
       return;
     }
     setEditPhoneError('');
@@ -261,7 +323,7 @@ export const LeadListScreen: React.FC = () => {
     const altErr = getMobileNumberError(editAltPhone, false);
     if (altErr) {
       setEditAltPhoneError(altErr);
-      Alert.alert('Validation Error', altErr);
+      showWarning('Validation Error', altErr);
       return;
     }
     setEditAltPhoneError('');
@@ -270,7 +332,7 @@ export const LeadListScreen: React.FC = () => {
     if (editFollowUpDate.trim()) {
       if (!/^\d{2}-\d{2}-\d{4}$/.test(editFollowUpDate.trim())) {
         setEditFollowUpDateError('Enter date in DD-MM-YYYY format (e.g. 09-10-2026).');
-        Alert.alert('Validation Error', 'Enter date in DD-MM-YYYY format (e.g. 09-10-2026).');
+        showWarning('Validation Error', 'Enter date in DD-MM-YYYY format (e.g. 09-10-2026).');
         return;
       }
       setEditFollowUpDateError('');
@@ -279,7 +341,7 @@ export const LeadListScreen: React.FC = () => {
 
     if (editFollowUpDate.trim() && isTimePastForToday(editFollowUpDate.trim(), editFollowUpTime)) {
       setEditFollowUpTimeError('Reminder time cannot be in the past for today.');
-      Alert.alert('Invalid Time', 'Reminder time cannot be in the past for today.');
+      showWarning('Invalid Time', 'Reminder time cannot be in the past for today.');
       return;
     }
     setEditFollowUpTimeError('');
@@ -295,6 +357,8 @@ export const LeadListScreen: React.FC = () => {
           interestedModel: editModel.trim() || 'General Inquiry',
           budget: parseFloat(editBudget) || 0,
           remarks: editRemarks.trim(),
+          inquiryPhotos: editInquiryPhotos,
+          repairPhotos: editInquiryPhotos,
           followUpDate: finalStorageDate,
           followUpTime: editFollowUpTime || undefined,
         },
@@ -303,38 +367,34 @@ export const LeadListScreen: React.FC = () => {
 
       if (updated) {
         setSelectedLead(updated);
-        Alert.alert('Lead Updated', 'Customer lead information saved successfully.');
+        showSuccess('Lead Updated', 'Customer lead information saved successfully.');
         setEditModalVisible(false);
         loadLeads();
       }
     } catch (e: any) {
-      Alert.alert('Update Failed', e.message);
+      showError('Update Failed', e);
     }
   };
 
   const handleDeleteLead = (lead: CustomerLead) => {
-    Alert.alert(
-      'Delete Lead',
-      `Are you sure you want to delete lead for ${lead.name}? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await LeadService.deleteLead(lead.id);
-              setDetailModalVisible(false);
-              setSelectedLead(null);
-              loadLeads();
-              Alert.alert('Deleted', 'Lead was deleted successfully.');
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            }
-          },
-        },
-      ]
-    );
+    showConfirm({
+      title: 'Delete Lead',
+      message: `Are you sure you want to delete lead for ${lead.name}? This action cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await LeadService.deleteLead(lead.id);
+          setDetailModalVisible(false);
+          setSelectedLead(null);
+          loadLeads();
+          showSuccess('Deleted', 'Lead was deleted successfully.');
+        } catch (e: any) {
+          showError('Error', e);
+        }
+      },
+    });
   };
 
   const resetForm = () => {
@@ -347,23 +407,49 @@ export const LeadListScreen: React.FC = () => {
     setModel('');
     setBudget('');
     setRemarks('');
+    setInquiryPhotos([]);
+    setIsUploadingInquiryPhoto(false);
     setFollowUpDate(getTodayDisplayDate());
     setFollowUpDateError('');
     setFollowUpTime('05:00 PM');
     setFollowUpTimeError('');
   };
 
-  const filteredLeads = leads.filter(l => {
-    const matchesFilter = filterStatus === 'All' || l.status === filterStatus.toLowerCase();
+  const filteredLeads = useMemo(() => {
+    const isAll = filterStatus === 'All';
+    const targetStatus = filterStatus.toLowerCase();
     const query = searchQuery.toLowerCase().trim();
-    const matchesQuery =
-      !query ||
-      l.name.toLowerCase().includes(query) ||
-      l.phone.includes(query) ||
-      l.interestedBrand.toLowerCase().includes(query) ||
-      l.interestedModel.toLowerCase().includes(query);
-    return matchesFilter && matchesQuery;
-  });
+
+    return leads.filter(l => {
+      const matchesFilter = isAll || l.status === targetStatus;
+      if (!matchesFilter) return false;
+      if (!query) return true;
+      return (
+        l.name.toLowerCase().includes(query) ||
+        l.phone.includes(query) ||
+        l.interestedBrand.toLowerCase().includes(query) ||
+        l.interestedModel.toLowerCase().includes(query)
+      );
+    });
+  }, [leads, filterStatus, searchQuery]);
+
+  const stageCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: leads.length,
+      new: 0,
+      follow_up: 0,
+      interested: 0,
+      purchased: 0,
+      lost: 0,
+    };
+    for (let i = 0; i < leads.length; i++) {
+      const st = leads[i].status;
+      if (counts[st] !== undefined) {
+        counts[st]++;
+      }
+    }
+    return counts;
+  }, [leads]);
 
   const getStatusVariant = (s: LeadStatus) => {
     switch (s) {
@@ -386,21 +472,13 @@ export const LeadListScreen: React.FC = () => {
     <ScreenContainer edges={['top', 'left', 'right']}>
       <AppHeader
         title="Leads"
-        subtitle="Customer Pipeline & Deals"
-        rightAction={
-          <Button
-            title="+ Add Lead"
-            onPress={() => setAddModalVisible(true)}
-            size="small"
-            style={{ marginRight: 4 }}
-          />
-        }
+        subtitle="Customer inquiries & sales"
       />
 
       <View style={styles.topFilterSection}>
         {/* Sticky LeadIQ Search Bar */}
         <SearchInput
-          placeholder="Search leads by customer, phone, model..."
+          placeholder="Search by name, phone or model..."
           value={searchQuery}
           onChangeText={setSearchQuery}
           onClear={() => setSearchQuery('')}
@@ -425,8 +503,8 @@ export const LeadListScreen: React.FC = () => {
               onPress={() => setFilterStatus(f)}
               count={
                 f === 'All'
-                  ? leads.length
-                  : leads.filter(l => l.status === f.toLowerCase()).length
+                  ? stageCounts.all
+                  : (stageCounts[f.toLowerCase()] || 0)
               }
             />
           ))}
@@ -439,6 +517,10 @@ export const LeadListScreen: React.FC = () => {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         renderItem={({ item }) => (
           <AppCard
             style={styles.leadCard}
@@ -472,7 +554,7 @@ export const LeadListScreen: React.FC = () => {
                   }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={[styles.arrowText, { color: colors.textSecondary }]}>↗</Text>
+                  <ArrowUpRight size={16} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -506,7 +588,12 @@ export const LeadListScreen: React.FC = () => {
                   size="small"
                 />
 
-                <Text style={[styles.budgetText, { color: colors.text }]}>
+                <Text
+                  style={[styles.budgetText, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
                   {formatCurrency(item.budget)}
                 </Text>
               </View>
@@ -518,7 +605,12 @@ export const LeadListScreen: React.FC = () => {
                 onPress={() => makePhoneCall(item.phone)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.actionBtnText, { color: colors.primary }]}>
+                <Text
+                  style={[styles.actionBtnText, { color: colors.primary }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
                   Call
                 </Text>
               </TouchableOpacity>
@@ -537,22 +629,42 @@ export const LeadListScreen: React.FC = () => {
                 }
                 activeOpacity={0.7}
               >
-                <Text style={[styles.actionBtnText, { color: '#FFFFFF' }]}>
+                <Text
+                  style={[styles.actionBtnText, { color: '#FFFFFF' }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
                   WhatsApp
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.quickActionBtn, { borderColor: colors.primary, backgroundColor: isDark ? 'rgba(37,99,235,0.1)' : '#EFF6FF' }]}
+                style={[
+                  styles.quickActionBtn,
+                  {
+                    borderColor: colors.primary,
+                    backgroundColor: isDark ? 'rgba(37,99,235,0.1)' : '#EFF6FF',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  },
+                ]}
                 onPress={() => {
                   setSelectedLead(item);
                   setDetailModalVisible(true);
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.actionBtnText, { color: colors.primary }]}>
-                  Details ↗
+                <Text
+                  style={[styles.actionBtnText, { color: colors.primary }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  Details
                 </Text>
+                <ArrowUpRight size={13} color={colors.primary} style={{ marginLeft: 3 }} />
               </TouchableOpacity>
             </View>
           </AppCard>
@@ -568,20 +680,45 @@ export const LeadListScreen: React.FC = () => {
         }
       />
 
-      {/* Add Lead Modal */}
-      <ModalCard
-        visible={addModalVisible}
-        onClose={() => setAddModalVisible(false)}
-        title="Add Customer Lead"
-        subtitle="Register new inquiry and automated follow-up"
+      {/* Floating Action Button (FAB) for Add Lead */}
+      <TouchableOpacity
+        style={[
+          styles.fab,
+          {
+            backgroundColor: colors.primary,
+            bottom: fabBottom,
+          },
+        ]}
+        onPress={() => setAddModalVisible(true)}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Add Lead"
       >
+        <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
+        <Text style={styles.fabText} numberOfLines={1}>
+          Add Lead
+        </Text>
+      </TouchableOpacity>
+
+      {/* Add Lead Modal */}
+      {addModalVisible && (
+        <ModalCard
+          visible={addModalVisible}
+          onClose={() => setAddModalVisible(false)}
+          title="Add Customer"
+          subtitle="Save customer details & follow-up"
+        >
         <Input
-          label="Customer Full Name *"
+          ref={nameInputRef}
+          label="Customer Name *"
           placeholder="e.g. Rajesh Kumar"
+          autoCapitalize="words"
+          returnKeyType="next"
           value={name}
           onChangeText={setName}
         />
         <Input
+          ref={phoneInputRef}
           label="Mobile Number *"
           placeholder="Enter 10-digit mobile number"
           keyboardType="phone-pad"
@@ -598,7 +735,8 @@ export const LeadListScreen: React.FC = () => {
           error={phoneError}
         />
         <Input
-          label="Alternative Mobile Number"
+          ref={altPhoneInputRef}
+          label="Alternate Mobile (Optional)"
           placeholder="Enter 10-digit mobile number"
           keyboardType="phone-pad"
           maxLength={10}
@@ -630,20 +768,21 @@ export const LeadListScreen: React.FC = () => {
         </ScrollView>
 
         <Input
-          label="Interested Model Details"
-          placeholder="e.g. V50 8GB/128GB Blue"
+          label="Model / Variant"
+          placeholder="e.g. Vivo V50 128GB"
           value={model}
           onChangeText={setModel}
         />
         <Input
-          label="Customer Budget (₹)"
+          label="Budget (₹)"
           placeholder="25000"
           keyboardType="numeric"
           value={budget}
           onChangeText={setBudget}
         />
         <Input
-          label="Follow-Up Date (DD-MM-YYYY)"
+          ref={followUpDateInputRef}
+          label="Next Follow-up Date"
           placeholder="DD-MM-YYYY (e.g. 09-10-2026)"
           keyboardType="numeric"
           maxLength={10}
@@ -662,7 +801,7 @@ export const LeadListScreen: React.FC = () => {
         />
 
         <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
-          Follow-Up Reminder Time (12-Hour AM/PM) *
+          Next Follow-up Time *
         </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: SPACING.xs }}>
           {['10:00 AM', '11:30 AM', '02:00 PM', '04:30 PM', '06:00 PM', '07:30 PM'].map((t) => (
@@ -695,31 +834,114 @@ export const LeadListScreen: React.FC = () => {
           error={followUpTimeError}
         />
         <Input
-          label="Remarks & Customer Preference"
-          placeholder="Wants exchange offer, EMI, etc."
+          label="Notes / Remarks"
+          placeholder="Customer requirements, exchange offer..."
           multiline
           numberOfLines={3}
           value={remarks}
           onChangeText={setRemarks}
         />
 
+        {/* Device Repair / Issue Photos */}
+        <View style={{ marginTop: SPACING.sm, marginBottom: SPACING.sm }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
+              Device Issue / Repair Photos ({inquiryPhotos.length}/3)
+            </Text>
+            {isUploadingInquiryPhoto && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={{ fontSize: 11, color: colors.primary }}>Uploading to CDN...</Text>
+              </View>
+            )}
+          </View>
+
+          {inquiryPhotos.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+              {inquiryPhotos.map((url, idx) => (
+                <View key={idx} style={{ position: 'relative', marginRight: 8 }}>
+                  <Image
+                    source={{ uri: CloudinaryService.getDeviceThumbnailUrl(url) }}
+                    style={{ width: 68, height: 68, borderRadius: 8, backgroundColor: '#E2E8F0' }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setInquiryPhotos(prev => prev.filter((_, i) => i !== idx))}
+                    style={{
+                      position: 'absolute',
+                      top: 2,
+                      right: 2,
+                      backgroundColor: 'rgba(0,0,0,0.6)',
+                      borderRadius: 10,
+                      width: 20,
+                      height: 20,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <X size={12} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {inquiryPhotos.length < 3 && (
+            <DocumentCapture
+              label="Add Device Photo (Damage / Screen / Issue)"
+              hint={
+                CloudinaryService.isConfigured()
+                  ? "Uploads repair photo to secure Cloud CDN"
+                  : "Cloud photo upload is paused until storage is connected"
+              }
+              onCapture={async (uri) => {
+                if (!uri) return;
+                if (!CloudinaryService.isConfigured()) {
+                  showError(
+                    'Cloud Storage Disconnected',
+                    'Cloud image upload is temporarily paused until a new storage provider is connected. Lead can still be saved normally.'
+                  );
+                  return;
+                }
+                setIsUploadingInquiryPhoto(true);
+                try {
+                  const uploadRes = await CloudinaryService.uploadImage(uri, {
+                    folder: 'leads',
+                    tags: ['repair_inquiry', selectedBrand],
+                  });
+                  if (uploadRes.success && uploadRes.secureUrl) {
+                    setInquiryPhotos(prev => [...prev, uploadRes.secureUrl!]);
+                  } else {
+                    showError('Upload Failed', uploadRes.error || 'Could not upload photo.');
+                  }
+                } catch (err: any) {
+                  showError('Upload Error', err?.message || 'Network error.');
+                } finally {
+                  setIsUploadingInquiryPhoto(false);
+                }
+              }}
+            />
+          )}
+        </View>
+
         <PrimaryButton
-          title={isSubmitting ? 'Saving Lead...' : '✓ Save & Schedule Follow-Up'}
+          title={isSubmitting ? 'Saving...' : 'Save Customer'}
+          icon={!isSubmitting ? <Check size={18} color="#FFFFFF" strokeWidth={2.5} /> : undefined}
           onPress={handleCreateLead}
           loading={isSubmitting}
           size="large"
-          style={{ marginTop: SPACING.md }}
+          style={{ marginTop: SPACING.lg }}
         />
       </ModalCard>
+      )}
 
       {/* Lead Details Modal (Matching 3rd Phone in LeadIQ reference!) */}
-      <ModalCard
-        visible={detailModalVisible}
-        onClose={() => setDetailModalVisible(false)}
-        title="Lead Details"
-        subtitle={selectedLead ? `Added on ${formatDate(selectedLead.createdAt)} by ${selectedLead.createdByName}` : ''}
-      >
-        {selectedLead && (
+      {detailModalVisible && selectedLead && (
+        <ModalCard
+          visible={detailModalVisible}
+          onClose={() => setDetailModalVisible(false)}
+          title="Lead Details"
+          subtitle={`Added on ${formatDate(selectedLead.createdAt)} by ${selectedLead.createdByName}`}
+        >
           <View>
             {/* Top Profile Header */}
             <View style={styles.detailHeroSection}>
@@ -795,7 +1017,7 @@ export const LeadListScreen: React.FC = () => {
             ) : null}
 
             <View style={[styles.contactCard, { backgroundColor: colors.card, borderColor: colors.border }, SHADOWS.subtle]}>
-              <Text style={styles.contactIcon}>⏰</Text>
+              <AppIcon name="clock" size={18} color={colors.warning} />
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={[styles.contactVal, { color: colors.warning }]}>
                   {selectedLead.followUpDate
@@ -827,6 +1049,22 @@ export const LeadListScreen: React.FC = () => {
                 </View>
               </>
             ) : null}
+
+            {/* Device Damage / Repair Photos */}
+            {((selectedLead.inquiryPhotos && selectedLead.inquiryPhotos.length > 0) || (selectedLead.repairPhotos && selectedLead.repairPhotos.length > 0)) && (
+              <>
+                <SectionHeader title="Device Issue / Repair Photos" />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  {((selectedLead.inquiryPhotos || selectedLead.repairPhotos) || []).map((imgUrl, idx) => (
+                    <Image
+                      key={idx}
+                      source={{ uri: CloudinaryService.getDeviceThumbnailUrl(imgUrl) }}
+                      style={{ width: 75, height: 75, borderRadius: 8, marginRight: 8, backgroundColor: '#E2E8F0' }}
+                    />
+                  ))}
+                </ScrollView>
+              </>
+            )}
 
             {/* Status Pipeline Switcher */}
             <SectionHeader title="Update Stage / Status" />
@@ -875,13 +1113,18 @@ export const LeadListScreen: React.FC = () => {
                     height: 44,
                     borderColor: colors.primary,
                     backgroundColor: isDark ? 'rgba(37,99,235,0.15)' : '#EFF6FF',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
                   },
                 ]}
                 onPress={() => handleOpenEdit(selectedLead)}
                 activeOpacity={0.7}
               >
+                <Pencil size={15} color={colors.primary} />
                 <Text style={[styles.actionBtnText, { color: colors.primary, fontSize: 13 }]}>
-                  ✎ Edit Lead Details
+                  Edit Lead Details
                 </Text>
               </TouchableOpacity>
 
@@ -892,30 +1135,38 @@ export const LeadListScreen: React.FC = () => {
                     height: 44,
                     borderColor: colors.danger,
                     backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEF2F2',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
                   },
                 ]}
                 onPress={() => handleDeleteLead(selectedLead)}
                 activeOpacity={0.7}
               >
+                <Trash2 size={15} color={colors.danger} />
                 <Text style={[styles.actionBtnText, { color: colors.danger, fontSize: 13 }]}>
-                  🗑 Delete Lead
+                  Delete Lead
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
-        )}
-      </ModalCard>
+        </ModalCard>
+      )}
 
       {/* Edit Lead Modal */}
-      <ModalCard
-        visible={editModalVisible}
-        onClose={() => setEditModalVisible(false)}
-        title="Edit Customer Lead"
-        subtitle={selectedLead ? `Editing lead for ${selectedLead.name}` : ''}
-      >
+      {editModalVisible && selectedLead && (
+        <ModalCard
+          visible={editModalVisible}
+          onClose={() => setEditModalVisible(false)}
+          title="Edit Customer"
+          subtitle={`Editing details for ${selectedLead.name}`}
+        >
         <Input
-          label="Customer Full Name *"
+          label="Customer Name *"
           placeholder="e.g. Rajesh Kumar"
+          autoCapitalize="words"
+          returnKeyType="next"
           value={editName}
           onChangeText={setEditName}
         />
@@ -936,7 +1187,7 @@ export const LeadListScreen: React.FC = () => {
           error={editPhoneError}
         />
         <Input
-          label="Alternative Mobile Number"
+          label="Alternate Mobile (Optional)"
           placeholder="Enter 10-digit mobile number"
           keyboardType="phone-pad"
           maxLength={10}
@@ -967,20 +1218,20 @@ export const LeadListScreen: React.FC = () => {
         </ScrollView>
 
         <Input
-          label="Interested Model Details"
-          placeholder="e.g. V50 8GB/128GB Blue"
+          label="Model / Variant"
+          placeholder="e.g. Vivo V50 128GB"
           value={editModel}
           onChangeText={setEditModel}
         />
         <Input
-          label="Customer Budget (₹)"
+          label="Budget (₹)"
           placeholder="25000"
           keyboardType="numeric"
           value={editBudget}
           onChangeText={setEditBudget}
         />
         <Input
-          label="Follow-Up Date (DD-MM-YYYY)"
+          label="Next Follow-up Date"
           placeholder="DD-MM-YYYY (e.g. 09-10-2026)"
           keyboardType="numeric"
           maxLength={10}
@@ -999,7 +1250,7 @@ export const LeadListScreen: React.FC = () => {
         />
 
         <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
-          Follow-Up Reminder Time (12-Hour AM/PM) *
+          Next Follow-up Time *
         </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: SPACING.xs }}>
           {['10:00 AM', '11:30 AM', '02:00 PM', '04:30 PM', '06:00 PM', '07:30 PM'].map((t) => (
@@ -1032,21 +1283,103 @@ export const LeadListScreen: React.FC = () => {
           error={editFollowUpTimeError}
         />
         <Input
-          label="Remarks & Customer Preference"
-          placeholder="Wants exchange offer, EMI, etc."
+          label="Notes / Remarks"
+          placeholder="Customer requirements, exchange offer..."
           multiline
           numberOfLines={3}
           value={editRemarks}
           onChangeText={setEditRemarks}
         />
 
+        {/* Device Repair / Issue Photos */}
+        <View style={{ marginTop: SPACING.sm, marginBottom: SPACING.sm }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
+              Device Issue / Repair Photos ({editInquiryPhotos.length}/3)
+            </Text>
+            {isUploadingEditInquiryPhoto && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={{ fontSize: 11, color: colors.primary }}>Uploading to CDN...</Text>
+              </View>
+            )}
+          </View>
+
+          {editInquiryPhotos.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+              {editInquiryPhotos.map((url, idx) => (
+                <View key={idx} style={{ position: 'relative', marginRight: 8 }}>
+                  <Image
+                    source={{ uri: CloudinaryService.getDeviceThumbnailUrl(url) }}
+                    style={{ width: 68, height: 68, borderRadius: 8, backgroundColor: '#E2E8F0' }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setEditInquiryPhotos(prev => prev.filter((_, i) => i !== idx))}
+                    style={{
+                      position: 'absolute',
+                      top: 2,
+                      right: 2,
+                      backgroundColor: 'rgba(0,0,0,0.6)',
+                      borderRadius: 10,
+                      width: 20,
+                      height: 20,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <X size={12} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {editInquiryPhotos.length < 3 && (
+            <DocumentCapture
+              label="Add Device Photo (Damage / Screen / Issue)"
+              hint={
+                CloudinaryService.isConfigured()
+                  ? "Uploads repair photo to secure Cloud CDN"
+                  : "Cloud photo upload is paused until storage is connected"
+              }
+              onCapture={async (uri) => {
+                if (!uri) return;
+                if (!CloudinaryService.isConfigured()) {
+                  showError(
+                    'Cloud Storage Disconnected',
+                    'Cloud image upload is temporarily paused until a new storage provider is connected.'
+                  );
+                  return;
+                }
+                setIsUploadingEditInquiryPhoto(true);
+                try {
+                  const uploadRes = await CloudinaryService.uploadImage(uri, {
+                    folder: 'leads',
+                    tags: ['repair_inquiry', editBrand],
+                  });
+                  if (uploadRes.success && uploadRes.secureUrl) {
+                    setEditInquiryPhotos(prev => [...prev, uploadRes.secureUrl!]);
+                  } else {
+                    showError('Upload Failed', uploadRes.error || 'Could not upload photo.');
+                  }
+                } catch (err: any) {
+                  showError('Upload Error', err?.message || 'Network error.');
+                } finally {
+                  setIsUploadingEditInquiryPhoto(false);
+                }
+              }}
+            />
+          )}
+        </View>
+
         <PrimaryButton
-          title="Save Changes"
+          title="Update Customer"
           onPress={handleSaveEdit}
           size="large"
-          style={{ marginTop: SPACING.md }}
+          style={{ marginTop: SPACING.lg }}
         />
       </ModalCard>
+      )}
     </ScreenContainer>
   );
 };
@@ -1064,11 +1397,15 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   filterScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
     paddingBottom: SPACING.sm,
+    paddingRight: SPACING.xxl,
   },
   listContent: {
     padding: SPACING.lg,
-    paddingBottom: SPACING.huge,
+    paddingBottom: 90,
   },
   leadCard: {
     marginVertical: SPACING.xs,
@@ -1146,15 +1483,18 @@ const styles = StyleSheet.create({
   },
   quickActionBtn: {
     flex: 1,
+    minWidth: 0,
     height: 36,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   actionBtnText: {
     ...TYPOGRAPHY.captionSmall,
     fontWeight: '700',
+    textAlign: 'center',
   },
   formLabel: {
     ...TYPOGRAPHY.caption,
@@ -1251,5 +1591,26 @@ const styles = StyleSheet.create({
   timelineAuthor: {
     ...TYPOGRAPHY.captionSmall,
     marginTop: 2,
+  },
+  fab: {
+    position: 'absolute',
+    right: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.full,
+    ...SHADOWS.floating,
+    elevation: 8,
+    zIndex: 99,
+  },
+  fabText: {
+    ...TYPOGRAPHY.button,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+    letterSpacing: 0.2,
+    flexShrink: 0,
   },
 });

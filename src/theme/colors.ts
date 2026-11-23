@@ -66,6 +66,69 @@ export const PALETTE = {
   },
 };
 
+/**
+ * Canonical THEME_COLORS source of truth used across the application.
+ * Re-exported in src/constants/index.ts for backward compatibility.
+ */
+export const THEME_COLORS = {
+  light: {
+    primary: PALETTE.primary,
+    primaryLight: PALETTE.primaryLight,
+    primaryDark: PALETTE.primaryDark,
+    accent: PALETTE.light.accent,
+    accentLight: PALETTE.light.accentLight,
+    success: PALETTE.success,
+    successLight: PALETTE.successLight,
+    danger: PALETTE.danger,
+    dangerLight: PALETTE.dangerLight,
+    warning: PALETTE.warning,
+    warningLight: PALETTE.warningLight,
+    info: PALETTE.info,
+    infoLight: PALETTE.infoLight,
+    purple: PALETTE.purple,
+    purpleLight: PALETTE.purpleLight,
+    background: PALETTE.light.background,
+    card: PALETTE.light.card,
+    cardSubtle: PALETTE.light.cardSubtle,
+    surface: PALETTE.light.surface,
+    surfaceSubtle: PALETTE.light.surfaceSubtle,
+    text: PALETTE.light.text,
+    textSecondary: PALETTE.light.textSecondary,
+    textMuted: PALETTE.light.textMuted,
+    border: PALETTE.light.border,
+    borderLight: PALETTE.light.borderLight,
+    statusBar: PALETTE.light.statusBar,
+  },
+  dark: {
+    primary: PALETTE.primary,
+    primaryLight: 'rgba(37, 99, 235, 0.2)',
+    primaryDark: PALETTE.primaryDark,
+    accent: PALETTE.dark.accent,
+    accentLight: PALETTE.dark.accentLight,
+    success: PALETTE.success,
+    successLight: 'rgba(34, 197, 94, 0.2)',
+    danger: PALETTE.danger,
+    dangerLight: 'rgba(239, 68, 68, 0.2)',
+    warning: PALETTE.warning,
+    warningLight: 'rgba(245, 158, 11, 0.2)',
+    info: PALETTE.info,
+    infoLight: 'rgba(14, 165, 233, 0.2)',
+    purple: PALETTE.purple,
+    purpleLight: 'rgba(139, 92, 246, 0.2)',
+    background: PALETTE.dark.background,
+    card: PALETTE.dark.card,
+    cardSubtle: PALETTE.dark.cardSubtle,
+    surface: PALETTE.dark.surface,
+    surfaceSubtle: PALETTE.dark.surfaceSubtle,
+    text: PALETTE.dark.text,
+    textSecondary: PALETTE.dark.textSecondary,
+    textMuted: PALETTE.dark.textMuted,
+    border: PALETTE.dark.border,
+    borderLight: PALETTE.dark.borderLight,
+    statusBar: PALETTE.dark.statusBar,
+  },
+};
+
 export type ThemeColors = Omit<typeof PALETTE.light, 'statusBar'> & {
   statusBar: 'dark-content' | 'light-content';
   primary: string;

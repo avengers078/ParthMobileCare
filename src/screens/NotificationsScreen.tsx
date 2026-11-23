@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Alert,
+  ScrollView,
+  RefreshControl,
 } from 'react-native';
 import {
   Bell,
@@ -17,6 +18,12 @@ import {
   Trash2,
   Users,
   Wallet,
+  Sparkles,
+  AlertTriangle,
+  Zap,
+  Info,
+  Calendar,
+  X,
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -25,9 +32,13 @@ import {
   AppCard,
   FilterChip,
   EmptyState,
+  Badge,
+  ModalCard,
+  Button,
 } from '../components';
 import { AppNotification } from '../types';
 import { StorageService } from '../services/storageService';
+import { FirestoreSyncService } from '../services/firestoreSync';
 import { formatDate } from '../utils/format';
 import { RADIUS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 
@@ -40,29 +51,54 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [filterType, setFilterType] = useState<string>('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<AppNotification | null>(null);
 
-  const loadNotifications = async () => {
-    const list = await StorageService.getNotifications();
-    setNotifications(list);
+  const loadNotifications = useCallback(async () => {
+    try {
+      const list = await StorageService.getNotifications();
+      setNotifications(list);
+    } catch (err) {
+      console.warn('[NotificationsScreen] Load error:', err);
+    }
+  }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await FirestoreSyncService.pullAllCloudToLocal();
+      await loadNotifications();
+    } catch (e) {
+      console.warn('[NotificationsScreen] Refresh sync error:', e);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => {
     loadNotifications();
-  }, []);
+  }, [loadNotifications]);
 
   const handleMarkAllRead = async () => {
-    for (const n of notifications) {
-      if (!n.read) {
-        await StorageService.markNotificationRead(n.id);
-      }
+    try {
+      await StorageService.markAllNotificationsRead();
+      await loadNotifications();
+    } catch (e) {
+      console.warn('[NotificationsScreen] Mark all read error:', e);
     }
-    loadNotifications();
   };
 
   const handleNotificationPress = async (item: AppNotification) => {
     if (!item.read) {
       await StorageService.markNotificationRead(item.id);
-      loadNotifications();
+      setNotifications(prev =>
+        prev.map(n => (n.id === item.id ? { ...n, read: true } : n))
+      );
+    }
+
+    if (item.type === 'announcement') {
+      setSelectedAnnouncement(item);
+      return;
     }
 
     // Contextual navigation based on notification type
@@ -83,15 +119,35 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
     }
   };
 
-  const filtered = notifications.filter(n => {
-    if (filterType === 'all') return true;
-    if (filterType === 'unread') return !n.read;
-    return n.type === filterType;
-  });
+  const isExpired = (item: AppNotification): boolean => {
+    if (!item.expiryDate) return false;
+    const todayStr = new Date().toISOString().split('T')[0];
+    return item.expiryDate < todayStr;
+  };
+
+  const filtered = useMemo(() => {
+    return notifications.filter(n => {
+      // Announcement lifecycle checks for staff UI
+      if (n.type === 'announcement') {
+        if (n.status === 'draft' || n.status === 'archived') return false;
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (n.startDate && n.startDate > todayStr) return false;
+      }
+      if (filterType === 'all') return true;
+      if (filterType === 'unread') return !n.read;
+      return n.type === filterType;
+    });
+  }, [notifications, filterType]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
+  const announcementCount = notifications.filter(n => n.type === 'announcement').length;
 
-  const getNotificationIcon = (type: AppNotification['type']) => {
+  const getNotificationIcon = (type: AppNotification['type'], priority?: string) => {
+    if (type === 'announcement') {
+      if (priority === 'urgent') return <AlertTriangle size={18} color={colors.danger} />;
+      if (priority === 'high') return <Zap size={18} color={colors.warning} />;
+      return <Sparkles size={18} color={colors.primary} />;
+    }
     switch (type) {
       case 'follow_up':
         return <Clock size={18} color={colors.warning} />;
@@ -107,6 +163,17 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
         return <Tag size={18} color="#8B5CF6" />;
       default:
         return <Bell size={18} color={colors.textSecondary} />;
+    }
+  };
+
+  const renderPriorityBadge = (priority?: string) => {
+    switch (priority) {
+      case 'urgent':
+        return <Badge label="Urgent" variant="danger" size="small" />;
+      case 'high':
+        return <Badge label="High Priority" variant="warning" size="small" />;
+      default:
+        return null;
     }
   };
 
@@ -138,16 +205,18 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
-          data={['all', 'unread', 'follow_up', 'attendance', 'lead', 'sale', 'purchase']}
+          data={['all', 'unread', 'announcement', 'follow_up', 'attendance', 'lead', 'sale', 'purchase']}
           keyExtractor={item => item}
           contentContainerStyle={styles.filterScroll}
           renderItem={({ item }) => (
             <FilterChip
               label={
                 item === 'all'
-                  ? 'All'
+                  ? 'All Alerts'
                   : item === 'unread'
                   ? `Unread (${unreadCount})`
+                  : item === 'announcement'
+                  ? `Announcements (${announcementCount})`
                   : item === 'follow_up'
                   ? 'Follow-Ups'
                   : item.charAt(0).toUpperCase() + item.slice(1)
@@ -165,8 +234,19 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
         renderItem={({ item }) => {
           const isUnread = !item.read;
+          const isAnnouncement = item.type === 'announcement';
+          const expired = isExpired(item);
+
           return (
             <TouchableOpacity
               onPress={() => handleNotificationPress(item)}
@@ -176,9 +256,11 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
                 style={[
                   styles.notifCard,
                   isUnread && {
-                    borderColor: colors.primary,
+                    borderColor: isAnnouncement ? colors.warning : colors.primary,
                     borderWidth: 1.5,
-                    backgroundColor: isDark ? 'rgba(37, 99, 235, 0.08)' : '#F0F7FF',
+                    backgroundColor: isDark
+                      ? (isAnnouncement ? 'rgba(245, 158, 11, 0.08)' : 'rgba(37, 99, 235, 0.08)')
+                      : (isAnnouncement ? '#FFFDF5' : '#F0F7FF'),
                   },
                 ]}
               >
@@ -193,22 +275,28 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
                       },
                     ]}
                   >
-                    {getNotificationIcon(item.type)}
+                    {getNotificationIcon(item.type, item.priority)}
                   </View>
 
                   <View style={styles.cardContent}>
                     <View style={styles.titleRow}>
-                      <Text
-                        style={[
-                          styles.notifTitle,
-                          { color: colors.text },
-                          isUnread && { fontWeight: '800' },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {item.title}
-                      </Text>
-                      {isUnread && <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />}
+                      <View style={styles.titleWithBadges}>
+                        <Text
+                          style={[
+                            styles.notifTitle,
+                            { color: colors.text },
+                            isUnread && { fontWeight: '800' },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.title}
+                        </Text>
+                      </View>
+                      <View style={styles.badgeCluster}>
+                        {renderPriorityBadge(item.priority)}
+                        {expired && <Badge label="Expired" variant="neutral" size="small" />}
+                        {isUnread && <View style={[styles.unreadDot, { backgroundColor: isAnnouncement ? colors.warning : colors.primary }]} />}
+                      </View>
                     </View>
 
                     <Text
@@ -218,9 +306,21 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
                       {item.body}
                     </Text>
 
-                    <Text style={[styles.notifTime, { color: colors.textMuted }]}>
-                      {formatDate(item.timestamp)}
-                    </Text>
+                    <View style={styles.metadataRow}>
+                      <Text style={[styles.notifTime, { color: colors.textMuted }]}>
+                        {formatDate(item.timestamp)}
+                      </Text>
+                      {item.authorName && (
+                        <Text style={[styles.authorTag, { color: colors.textMuted }]}>
+                          • Store Broadcast
+                        </Text>
+                      )}
+                      {item.expiryDate && !expired && (
+                        <Text style={[styles.expiryTag, { color: colors.warning }]}>
+                          • Valid till {item.expiryDate}
+                        </Text>
+                      )}
+                    </View>
                   </View>
                 </View>
               </AppCard>
@@ -231,10 +331,66 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
           <EmptyState
             icon={<Bell size={32} color={colors.textMuted} />}
             title="No Notifications"
-            description="You are all caught up! New alerts and follow-up reminders will appear here."
+            description="You are all caught up! New alerts and store announcements will appear here."
           />
         }
       />
+
+      {/* Announcement Detail Modal */}
+      {selectedAnnouncement && (
+        <ModalCard
+          visible={Boolean(selectedAnnouncement)}
+          onClose={() => setSelectedAnnouncement(null)}
+          title={selectedAnnouncement.title}
+          subtitle={`Store Announcement • ${formatDate(selectedAnnouncement.timestamp)}`}
+        >
+          <View style={styles.modalBodyContainer}>
+            {/* Metadata Tags */}
+            <View style={styles.modalMetaRow}>
+              {selectedAnnouncement.priority && (
+                <View style={styles.modalMetaItem}>
+                  <Text style={[styles.modalMetaLabel, { color: colors.textMuted }]}>PRIORITY</Text>
+                  {renderPriorityBadge(selectedAnnouncement.priority) || (
+                    <Badge label="Standard" variant="neutral" size="small" />
+                  )}
+                </View>
+              )}
+              <View style={styles.modalMetaItem}>
+                <Text style={[styles.modalMetaLabel, { color: colors.textMuted }]}>AUDIENCE</Text>
+                <Badge
+                  label={selectedAnnouncement.targetAudience === 'specific_staff' ? 'Targeted Team' : 'All Staff'}
+                  variant="info"
+                  size="small"
+                />
+              </View>
+              {selectedAnnouncement.expiryDate && (
+                <View style={styles.modalMetaItem}>
+                  <Text style={[styles.modalMetaLabel, { color: colors.textMuted }]}>EXPIRATION</Text>
+                  <Text style={[styles.modalMetaValue, { color: colors.textSecondary }]}>
+                    {selectedAnnouncement.expiryDate}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Announcement Message */}
+            <View style={[styles.announcementContentBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.announcementContentText, { color: colors.text }]}>
+                {selectedAnnouncement.body}
+              </Text>
+            </View>
+
+            <View style={styles.modalFooterRow}>
+              <Button
+                title="Got It"
+                variant="primary"
+                onPress={() => setSelectedAnnouncement(null)}
+                style={{ width: '100%' }}
+              />
+            </View>
+          </View>
+        </ModalCard>
+      )}
     </ScreenContainer>
   );
 };
@@ -286,10 +442,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 2,
   },
+  titleWithBadges: {
+    flex: 1,
+    marginRight: 6,
+  },
+  badgeCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   notifTitle: {
     ...TYPOGRAPHY.bodyBold,
     fontSize: 15,
-    flex: 1,
   },
   unreadDot: {
     width: 8,
@@ -303,8 +467,57 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 4,
   },
+  metadataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
   notifTime: {
     ...TYPOGRAPHY.captionSmall,
   },
+  authorTag: {
+    ...TYPOGRAPHY.captionSmall,
+  },
+  expiryTag: {
+    ...TYPOGRAPHY.captionSmall,
+    fontWeight: '600',
+  },
+  modalBodyContainer: {
+    paddingTop: SPACING.xs,
+  },
+  modalMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  modalMetaItem: {
+    marginRight: SPACING.sm,
+  },
+  modalMetaLabel: {
+    ...TYPOGRAPHY.captionSmall,
+    fontSize: 10,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  modalMetaValue: {
+    ...TYPOGRAPHY.captionSmall,
+    fontWeight: '600',
+  },
+  announcementContentBox: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.lg,
+  },
+  announcementContentText: {
+    ...TYPOGRAPHY.body,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  modalFooterRow: {
+    marginTop: SPACING.xs,
+  },
 });
-

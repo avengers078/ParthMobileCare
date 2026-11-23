@@ -7,18 +7,19 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
-  Alert,
   Keyboard,
   Dimensions,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
+import { useAlert } from '../context/AlertContext';
 import { ExcelService, ImportValidationResult } from '../services/excelService';
 import { MobilePriceItem } from '../types';
 import { Button } from './Button';
 import { formatCurrency } from '../utils/format';
 import { AppIcon } from './AppIcon';
+import { X, AlertTriangle, Zap } from 'lucide-react-native';
 import { errorCodes, isErrorWithCode, keepLocalCopy, pick, types } from '@react-native-documents/picker';
 import { FileSystem } from 'react-native-file-access';
 
@@ -36,6 +37,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   onImportComplete,
 }) => {
   const { colors, isDark } = useTheme();
+  const { showSuccess, showError, showWarning } = useAlert();
   const insets = useSafeAreaInsets();
   const [csvInput, setCsvInput] = useState<string>('');
   const [validationResult, setValidationResult] = useState<ImportValidationResult | null>(null);
@@ -71,12 +73,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       hideSub.remove();
     };
   }, []);
-
-  const handleLoadSample = () => {
-    setCsvInput(ExcelService.getSampleData());
-    setSourceFileName('');
-    setValidationResult(null);
-  };
 
   const handlePickFile = async () => {
     setIsPickingFile(true);
@@ -132,8 +128,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       setSourceFileName(fileName);
       setValidationResult(result);
     } catch (error: any) {
-      if (isErrorWithCode(error) && error.code === errorCodes.OPERATION_CANCELED) return;
-      Alert.alert('Could not read spreadsheet', error?.message || 'Select a valid Excel or CSV file and try again.');
+      if (
+        (isErrorWithCode(error) && error.code === errorCodes.OPERATION_CANCELED) ||
+        error?.message?.toLowerCase().includes('canceled') ||
+        error?.message?.toLowerCase().includes('cancelled')
+      ) {
+        return;
+      }
+      showError('Could not read spreadsheet', error?.message || 'Select a valid Excel or CSV file and try again.');
     } finally {
       setIsPickingFile(false);
     }
@@ -142,7 +144,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const handleValidate = async () => {
     Keyboard.dismiss();
     if (!csvInput.trim()) {
-      Alert.alert('Empty Data', 'Please paste CSV/Excel content or load the sample template.');
+      showWarning('Empty Data', 'Please paste CSV/Excel content or load the sample template.');
       return;
     }
     setIsValidating(true);
@@ -151,7 +153,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       setValidationResult(res);
       setSourceFileName('Pasted CSV data');
     } catch (e: any) {
-      Alert.alert('Parsing Error', e.message || 'Failed to parse file content.');
+      showError('Parsing Error', e?.message || 'Failed to parse file content.');
     } finally {
       setIsValidating(false);
     }
@@ -159,7 +161,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   const handleCommit = async () => {
     if (!validationResult || validationResult.validItems.length === 0) {
-      Alert.alert('No valid items', 'There are no valid rows to import.');
+      showWarning('No valid items', 'There are no valid rows to import.');
       return;
     }
     setIsImporting(true);
@@ -168,24 +170,17 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         validationResult.validItems,
         existingItems
       );
-      Alert.alert(
+      showSuccess(
         'Import Successful!',
-        `Successfully imported and updated ${count} mobile models with price history.`,
-        [
-          {
-            text: 'Done',
-            onPress: () => {
-              onImportComplete(count);
-              onClose();
-              setValidationResult(null);
-              setCsvInput('');
-              setSourceFileName('');
-            },
-          },
-        ]
+        `Successfully imported and updated ${count} mobile models with price history.`
       );
+      onImportComplete(count);
+      onClose();
+      setValidationResult(null);
+      setCsvInput('');
+      setSourceFileName('');
     } catch (e: any) {
-      Alert.alert('Import Failed', e.message || 'Error updating price list.');
+      showError('Import Failed', e?.message || 'Error updating price list.');
     } finally {
       setIsImporting(false);
     }
@@ -233,7 +228,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               accessibilityLabel="Close import modal"
               accessibilityRole="button"
             >
-              <Text style={[styles.closeIcon, { color: colors.textSecondary }]}>✕</Text>
+              <X size={15} color={colors.textSecondary} strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
 
@@ -249,30 +244,34 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             keyboardShouldPersistTaps="handled"
             nestedScrollEnabled={true}
           >
-            {/* Choose a spreadsheet or use paste/sample input */}
-            <View style={styles.sampleRow}>
+            {/* Choose a spreadsheet file */}
+            <View style={styles.fileUploadSection}>
               <Text style={[styles.sectionLabel, { color: colors.text }]}>
                 Excel Sheet Content (CSV / XLSX)
               </Text>
-              <View style={styles.fileActions}>
-                <TouchableOpacity
-                  onPress={handleLoadSample}
-                  style={[styles.sampleBtn, { borderColor: colors.primary }]}
-                >
-                  <Text style={[styles.sampleBtnText, { color: colors.primary }]}>Load Sample Sheet (PDF Example)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handlePickFile}
-                  disabled={isPickingFile}
-                  style={[styles.sampleBtn, styles.chooseFileBtn, { backgroundColor: colors.primary, borderColor: colors.primary, opacity: isPickingFile ? 0.65 : 1 }]}
-                >
-                  <Text style={[styles.sampleBtnText, { color: '#FFFFFF' }]}>
-                    {isPickingFile ? 'Reading…' : 'Choose Excel / CSV'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                onPress={handlePickFile}
+                disabled={isPickingFile}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Choose Excel or CSV file"
+                style={[
+                  styles.chooseFileBtnFull,
+                  {
+                    backgroundColor: colors.primary,
+                    opacity: isPickingFile ? 0.65 : 1,
+                  },
+                ]}
+              >
+                <AppIcon name="file" size={17} color="#FFFFFF" strokeWidth={2.2} />
+                <Text style={styles.chooseFileBtnFullText}>
+                  {isPickingFile ? 'Reading Spreadsheet…' : 'Choose Excel / CSV File'}
+                </Text>
+              </TouchableOpacity>
+              <Text style={[styles.helperText, { color: colors.textSecondary, marginTop: 8 }]}>
+                Reads .xlsx, .xls, and .csv on this device. Headers can appear below a title row.
+              </Text>
             </View>
-            <Text style={[styles.helperText, { color: colors.textSecondary }]}>Reads .xlsx, .xls, and .csv on this device. Headers can appear below a title row.</Text>
 
             <Text style={[styles.sectionLabel, { color: colors.text, marginBottom: 8, marginTop: 12 }]}>Or paste CSV data</Text>
 
@@ -457,9 +456,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 {/* Error Rows Report */}
                 {validationResult.errorRows.length > 0 && (
                   <View style={[styles.errorContainer, { backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : '#FEF2F2' }]}>
-                    <Text style={[styles.errorTitle, { color: colors.danger }]}>
-                      ⚠️ Invalid Rows Detected:
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <AlertTriangle size={15} color={colors.danger} />
+                      <Text style={[styles.errorTitle, { color: colors.danger, marginBottom: 0 }]}>
+                        Invalid Rows Detected:
+                      </Text>
+                    </View>
                     {validationResult.errorRows.map((err, eIdx) => (
                       <Text key={eIdx} style={[styles.errorText, { color: colors.danger }]}>
                         Row {err.rowNumber}: {err.reason}
@@ -473,8 +475,9 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                   title={
                     isImporting
                       ? 'Updating Price List...'
-                      : `⚡ One-Click Update (${validationResult.validItems.length} Models)`
+                      : `One-Click Update (${validationResult.validItems.length} Models)`
                   }
+                  icon={!isImporting ? <Zap size={16} color="#FFFFFF" strokeWidth={2.2} /> : undefined}
                   onPress={handleCommit}
                   loading={isImporting}
                   variant="success"
@@ -534,13 +537,25 @@ const styles = StyleSheet.create({
   body: {
     padding: 16,
   },
-  sampleRow: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    marginBottom: 8,
+  fileUploadSection: {
+    marginBottom: 12,
   },
-  fileActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
-  chooseFileBtn: { paddingHorizontal: 12, paddingVertical: 7 },
+  chooseFileBtnFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  chooseFileBtnFullText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   helperText: { fontSize: 12, lineHeight: 17 },
   sourceLabel: { fontSize: 12, marginBottom: 4 },
   sectionLabel: {

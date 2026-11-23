@@ -78,6 +78,9 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.parthmobilecare"
+    androidResources {
+        noCompress 'tflite'
+    }
     defaultConfig {
         applicationId "com.parthmobilecare"
         minSdkVersion rootProject.ext.minSdkVersion

@@ -100,7 +100,10 @@ export const StatCard: React.FC<StatCardProps> = ({
 
         {badgeText ? (
           <View style={[styles.badge, { backgroundColor: badgeColors.bg }]}>
-            <Text style={[styles.badgeText, { color: badgeColors.text }]}>
+            <Text
+              style={[styles.badgeText, { color: badgeColors.text }]}
+              numberOfLines={1}
+            >
               {badgeText}
             </Text>
           </View>
@@ -114,12 +117,16 @@ export const StatCard: React.FC<StatCardProps> = ({
         ]}
         numberOfLines={1}
         adjustsFontSizeToFit
-        minimumFontScale={0.75}
+        minimumFontScale={0.7}
       >
         {value}
       </Text>
 
-      <Text style={[styles.label, { color: colors.textSecondary }]}>
+      <Text
+        style={[styles.label, { color: colors.textSecondary }]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
         {label}
       </Text>
     </View>
@@ -138,7 +145,7 @@ export const StatCard: React.FC<StatCardProps> = ({
 
 const styles = StyleSheet.create({
   animatedContainer: {
-    minWidth: 150,
+    width: 160,
     marginRight: SPACING.md,
     marginVertical: 0,
     borderRadius: RADIUS.lg,
@@ -147,7 +154,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     borderWidth: 0,
-    minWidth: 150,
+    width: 160,
   },
   topRow: {
     flexDirection: 'row',

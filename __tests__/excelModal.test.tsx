@@ -61,7 +61,7 @@ describe('ExcelImportModal component', () => {
 
     expect(texts).toContain('Smart Excel / CSV Import');
     expect(texts).toContain('Excel Sheet Content (CSV / XLSX)');
-    expect(texts).toContain('Load Sample Sheet (PDF Example)');
+    expect(texts).toContain('Choose Excel / CSV File');
     expect(texts).toContain('Validate & Detect Data');
   });
 

@@ -1,55 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Alert,
   ScrollView,
+  Platform,
 } from 'react-native';
-import { useAuth } from '../context/AuthContext';
+import { CheckCircle2 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import {
   ScreenContainer,
   AppHeader,
   AppCard,
   StatusBadge,
-  Button,
-  PrimaryButton,
-  Input,
   SearchInput,
   FilterChip,
   ModalCard,
   EmptyState,
-  ExcelImportModal,
   AppIcon,
 } from '../components';
 import { MobilePriceItem } from '../types';
 import { StorageService } from '../services/storageService';
 import { formatCurrency, formatDate } from '../utils/format';
 import { BRANDS } from '../constants';
-import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
+import { RADIUS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 
 export const PriceListScreen: React.FC = () => {
-  const { currentUser, isAdmin, isManager } = useAuth();
   const { colors, isDark } = useTheme();
 
   const [priceList, setPriceList] = useState<MobilePriceItem[]>([]);
   const [selectedBrand, setSelectedBrand] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [excelModalVisible, setExcelModalVisible] = useState(false);
-  const [addModalVisible, setAddModalVisible] = useState(false);
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MobilePriceItem | null>(null);
-
-  // Form state for adding/editing a model
-  const [brand, setBrand] = useState('Vivo');
-  const [model, setModel] = useState('');
-  const [ram, setRam] = useState('8GB');
-  const [storage, setStorage] = useState('128GB');
-  const [purchasePrice, setPurchasePrice] = useState('');
-  const [sellingPrice, setSellingPrice] = useState('');
 
   const loadPriceList = async () => {
     const list = await StorageService.getPriceList();
@@ -60,120 +45,46 @@ export const PriceListScreen: React.FC = () => {
     loadPriceList();
   }, []);
 
-  const handleSaveModel = async () => {
-    if (!model.trim()) {
-      Alert.alert('Validation Error', 'Model name is required.');
-      return;
-    }
-    const buyPrice = parseFloat(purchasePrice) || 0;
-    const sellPrice = parseFloat(sellingPrice) || 0;
-
-    if (buyPrice <= 0 || sellPrice <= 0) {
-      Alert.alert('Validation Error', 'Please enter valid purchase and selling prices.');
-      return;
-    }
-
-    const newItem: MobilePriceItem = {
-      id: selectedItem?.id || `price_${Date.now()}`,
-      brand,
-      model: model.trim(),
-      ram,
-      storage,
-      purchasePrice: buyPrice,
-      sellingPrice: sellPrice,
-      inStock: true,
-      updatedAt: new Date().toISOString(),
-      priceHistory: selectedItem
-        ? [
-            {
-              date: new Date().toISOString().split('T')[0],
-              purchasePrice: selectedItem.purchasePrice,
-              sellingPrice: selectedItem.sellingPrice,
-              updatedBy: currentUser?.name || 'Staff',
-            },
-            ...(selectedItem.priceHistory || []),
-          ]
-        : [],
-    };
-
-    await StorageService.savePriceItem(newItem);
-    Alert.alert('Success', `Model ${newItem.brand} ${newItem.model} saved successfully!`);
-    setAddModalVisible(false);
-    resetForm();
-    loadPriceList();
-  };
-
-  const handleDeleteModel = async (id: string) => {
-    Alert.alert('Confirm Delete', 'Are you sure you want to delete this model from price list?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await StorageService.deletePriceItem(id);
-          loadPriceList();
-        },
-      },
-    ]);
-  };
-
-  const resetForm = () => {
-    setSelectedItem(null);
-    setBrand('Vivo');
-    setModel('');
-    setRam('8GB');
-    setStorage('128GB');
-    setPurchasePrice('');
-    setSellingPrice('');
-  };
-
-  const filteredItems = priceList.filter(item => {
-    const matchesBrand = selectedBrand === 'All' || item.brand.toLowerCase() === selectedBrand.toLowerCase();
+  const filteredItems = useMemo(() => {
+    const isAll = selectedBrand === 'All';
+    const targetBrand = selectedBrand.toLowerCase();
     const query = searchQuery.toLowerCase().trim();
-    const matchesQuery =
-      !query ||
-      item.brand.toLowerCase().includes(query) ||
-      item.model.toLowerCase().includes(query) ||
-      (item.ram && item.ram.toLowerCase().includes(query)) ||
-      (item.storage && item.storage.toLowerCase().includes(query));
-    return matchesBrand && matchesQuery;
-  });
+
+    return priceList.filter(item => {
+      const matchesBrand = isAll || item.brand.toLowerCase() === targetBrand;
+      if (!matchesBrand) return false;
+      if (!query) return true;
+      return (
+        item.brand.toLowerCase().includes(query) ||
+        item.model.toLowerCase().includes(query) ||
+        (item.ram && item.ram.toLowerCase().includes(query)) ||
+        (item.storage && item.storage.toLowerCase().includes(query))
+      );
+    });
+  }, [priceList, selectedBrand, searchQuery]);
+
+  const brandCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: priceList.length };
+    for (let i = 0; i < priceList.length; i++) {
+      const b = priceList[i].brand;
+      counts[b] = (counts[b] || 0) + 1;
+    }
+    return counts;
+  }, [priceList]);
+
+  const keyExtractor = useCallback((item: MobilePriceItem) => item.id, []);
 
   return (
     <ScreenContainer edges={['top', 'left', 'right']}>
       <AppHeader
         title="Price List"
-        subtitle="Catalog & Margins"
-        rightAction={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {(isAdmin || isManager) && (
-              <TouchableOpacity
-                style={[styles.excelBtn, { backgroundColor: colors.accent }]}
-                onPress={() => setExcelModalVisible(true)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.excelButtonContent}>
-                  <AppIcon name="file" size={15} color="#FFFFFF" />
-                  <Text style={styles.excelBtnText}>Excel</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            <Button
-              title="+ Add"
-              onPress={() => {
-                resetForm();
-                setAddModalVisible(true);
-              }}
-              size="small"
-            />
-          </View>
-        }
+        subtitle="Official store phone rates"
       />
 
       <View style={styles.topFilterSection}>
-        {/* Sticky LeadIQ Search Bar */}
+        {/* Sticky Search Bar */}
         <SearchInput
-          placeholder="Search mobile model (e.g. V50, Reno 14, iPhone)..."
+          placeholder="Search phone model..."
           value={searchQuery}
           onChangeText={setSearchQuery}
           onClear={() => setSearchQuery('')}
@@ -183,6 +94,7 @@ export const PriceListScreen: React.FC = () => {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.brandTabsScroll}
           contentContainerStyle={styles.brandTabsContainer}
         >
           {BRANDS.map(b => (
@@ -191,11 +103,7 @@ export const PriceListScreen: React.FC = () => {
               label={b}
               active={selectedBrand === b}
               onPress={() => setSelectedBrand(b)}
-              count={
-                b === 'All'
-                  ? priceList.length
-                  : priceList.filter(item => item.brand.toLowerCase() === b.toLowerCase()).length
-              }
+              count={b === 'All' ? brandCounts.All : (brandCounts[b] || 0)}
             />
           ))}
         </ScrollView>
@@ -206,310 +114,184 @@ export const PriceListScreen: React.FC = () => {
         <Text style={[styles.countText, { color: colors.textSecondary }]}>
           Showing {filteredItems.length} models for {selectedBrand}
         </Text>
-        {(isAdmin || isManager) && (
-          <StatusBadge label="ADMIN EDIT ENABLED" variant="primary" size="small" />
-        )}
       </View>
 
       {/* Mobile Price List Cards */}
       <FlatList
         data={filteredItems}
-        keyExtractor={item => item.id}
+        keyExtractor={keyExtractor}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
-          const margin = item.sellingPrice - item.purchasePrice;
-          const marginPercent =
-            item.purchasePrice > 0
-              ? Math.round((margin / item.purchasePrice) * 1000) / 10
-              : 0;
-
-          return (
-            <AppCard
-              style={styles.priceCard}
-              onPress={() => {
-                if (item.priceHistory && item.priceHistory.length > 0) {
-                  setSelectedItem(item);
-                  setHistoryModalVisible(true);
-                } else if (isAdmin || isManager) {
-                  setSelectedItem(item);
-                  setBrand(item.brand);
-                  setModel(item.model);
-                  setRam(item.ram || '8GB');
-                  setStorage(item.storage || '128GB');
-                  setPurchasePrice(item.purchasePrice.toString());
-                  setSellingPrice(item.sellingPrice.toString());
-                  setAddModalVisible(true);
-                }
-              }}
-            >
-              <View style={styles.cardHeader}>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <StatusBadge label={item.brand.toUpperCase()} variant="primary" size="small" />
-                    <Text style={[styles.modelName, { color: colors.text }]}>
-                      {item.model}
-                    </Text>
-                  </View>
-                  <Text style={[styles.variantText, { color: colors.textSecondary }]}>
-                    RAM: {item.ram || 'Standard'} • Storage: {item.storage || 'Standard'}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        renderItem={({ item }) => (
+          <AppCard
+            style={styles.priceCard}
+            onPress={() => {
+              if (item.priceHistory && item.priceHistory.length > 0) {
+                setSelectedItem(item);
+                setHistoryModalVisible(true);
+              }
+            }}
+          >
+            <View style={styles.cardHeader}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <StatusBadge label={item.brand.toUpperCase()} variant="primary" size="small" />
+                  <Text style={[styles.modelName, { color: colors.text }]}>
+                    {item.model}
                   </Text>
                 </View>
-
-                {item.priceHistory && item.priceHistory.length > 0 && (
-                  <TouchableOpacity
-                    style={[styles.historyBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
-                    onPress={() => {
-                      setSelectedItem(item);
-                      setHistoryModalVisible(true);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.historyBtnText, { color: colors.info }]}>
-                      History ({item.priceHistory.length})
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                <Text style={[styles.variantText, { color: colors.textSecondary }]}>
+                  RAM: {item.ram || 'Standard'} • Storage: {item.storage || 'Standard'}
+                </Text>
               </View>
 
-              {/* Price Details Box */}
-              <View
-                style={[
-                  styles.priceBox,
-                  {
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <View style={styles.priceCol}>
-                  <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>
-                    Selling Price
+              {item.priceHistory && item.priceHistory.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.historyBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
+                  onPress={() => {
+                    setSelectedItem(item);
+                    setHistoryModalVisible(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.historyBtnText, { color: colors.info }]}>
+                    History ({item.priceHistory.length})
                   </Text>
-                  <Text style={[styles.sellingValue, { color: colors.accent }]}>
-                    {formatCurrency(item.sellingPrice)}
-                  </Text>
-                </View>
-
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                {(isAdmin || isManager) ? (
-                  <>
-                    <View style={styles.priceCol}>
-                      <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>
-                        Purchase Cost
-                      </Text>
-                      <Text style={[styles.costValue, { color: colors.text }]}>
-                        {formatCurrency(item.purchasePrice)}
-                      </Text>
-                    </View>
-
-                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                    <View style={styles.priceCol}>
-                      <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>
-                        Margin Profit
-                      </Text>
-                      <Text style={[styles.marginValue, { color: colors.primary }]}>
-                        +{formatCurrency(margin)} ({marginPercent}%)
-                      </Text>
-                    </View>
-                  </>
-                ) : (
-                  <View style={styles.priceCol}>
-                    <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>
-                      Availability
-                    </Text>
-                    <Text style={[styles.marginValue, { color: colors.accent }]}>
-                      ✓ In Stock
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Admin Actions */}
-              {(isAdmin || isManager) && (
-                <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
-                    onPress={() => {
-                      setSelectedItem(item);
-                      setBrand(item.brand);
-                      setModel(item.model);
-                      setRam(item.ram || '8GB');
-                      setStorage(item.storage || '128GB');
-                      setPurchasePrice(item.purchasePrice.toString());
-                      setSellingPrice(item.sellingPrice.toString());
-                      setAddModalVisible(true);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.actionBtnText, { color: colors.primary }]}>
-                      Edit Prices
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
-                    onPress={() => handleDeleteModel(item.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.actionBtnText, { color: colors.danger }]}>
-                      Delete
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               )}
-            </AppCard>
-          );
-        }}
+            </View>
+
+            {/* Price Details Box - Retail Selling Price & Availability */}
+            <View
+              style={[
+                styles.priceBox,
+                {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <View style={styles.priceCol}>
+                <Text
+                  style={[styles.priceLabel, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  Selling Price (MOP)
+                </Text>
+                <Text
+                  style={[styles.sellingValue, { color: colors.accent }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {formatCurrency(item.sellingPrice)}
+                </Text>
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+              <View style={styles.priceCol}>
+                <Text
+                  style={[styles.priceLabel, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  Availability
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <CheckCircle2 size={13} color={colors.accent} />
+                  <Text
+                    style={[styles.availabilityValue, { color: colors.accent }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                  >
+                    In Stock
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </AppCard>
+        )}
         ListEmptyComponent={
           <EmptyState
             icon={<AppIcon name="tag" size={28} color={colors.primary} />}
             title="No Models Found"
-            description="No models found for this brand. Upload an Excel price sheet to bulk import!"
-            actionTitle="+ Add Model"
-            onActionPress={() => {
-              resetForm();
-              setAddModalVisible(true);
-            }}
+            description="No models found matching your search filter."
           />
         }
       />
 
-      {/* Add / Edit Model Modal */}
-      <ModalCard
-        visible={addModalVisible}
-        onClose={() => setAddModalVisible(false)}
-        title={selectedItem ? 'Edit Model Prices' : 'Add Mobile Model'}
-        subtitle="Update inventory catalog and pricing"
-      >
-        <Text style={[styles.label, { color: colors.textSecondary }]}>Brand *</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: SPACING.xs }}>
-          {BRANDS.filter(b => b !== 'All').map(b => (
-            <FilterChip
-              key={b}
-              label={b}
-              active={brand === b}
-              onPress={() => setBrand(b)}
-            />
-          ))}
-        </ScrollView>
-
-        <Input label="Model Name *" placeholder="e.g. V50, Reno 14, A56" value={model} onChangeText={setModel} />
-        <Input label="RAM Variant" placeholder="e.g. 8GB" value={ram} onChangeText={setRam} />
-        <Input label="Storage Variant" placeholder="e.g. 128GB / 256GB" value={storage} onChangeText={setStorage} />
-        <Input
-          label="Purchase Price (₹) *"
-          placeholder="e.g. 18000"
-          keyboardType="numeric"
-          value={purchasePrice}
-          onChangeText={setPurchasePrice}
-        />
-        <Input
-          label="Selling Price (₹) *"
-          placeholder="e.g. 21999"
-          keyboardType="numeric"
-          value={sellingPrice}
-          onChangeText={setSellingPrice}
-        />
-
-        <PrimaryButton
-          title={selectedItem ? 'Update Model Prices' : 'Add to Catalog'}
-          onPress={handleSaveModel}
-          size="large"
-          style={{ marginTop: SPACING.md }}
-        />
-      </ModalCard>
-
-      {/* Price History Modal */}
-      <ModalCard
-        visible={historyModalVisible}
-        onClose={() => setHistoryModalVisible(false)}
-        title="Price Revision History"
-        subtitle={selectedItem ? `${selectedItem.brand} ${selectedItem.model}` : ''}
-      >
-        {selectedItem?.priceHistory && selectedItem.priceHistory.length > 0 ? (
-          selectedItem.priceHistory.map((h, i) => (
-            <View key={i} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
-              <View>
-                <Text style={[styles.historyDateText, { color: colors.text }]}>
-                  {formatDate(h.date)}
-                </Text>
-                <Text style={[styles.historyUserText, { color: colors.textSecondary }]}>
-                  Updated by: {h.updatedBy}
-                </Text>
+      {/* Price Revision History Modal (Customer Selling Price Only) */}
+      {historyModalVisible && selectedItem && (
+        <ModalCard
+          visible={historyModalVisible}
+          onClose={() => setHistoryModalVisible(false)}
+          title="Price Revision History"
+          subtitle={`${selectedItem.brand} ${selectedItem.model}`}
+        >
+          {selectedItem.priceHistory && selectedItem.priceHistory.length > 0 ? (
+            selectedItem.priceHistory.map((h, i) => (
+              <View key={i} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
+                <View>
+                  <Text style={[styles.historyDateText, { color: colors.text }]}>
+                    {formatDate(h.date)}
+                  </Text>
+                  <Text style={[styles.historyUserText, { color: colors.textSecondary }]}>
+                    Verified by: {h.updatedBy || 'Store Admin'}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={[styles.historySellText, { color: colors.accent }]}>
+                    {formatCurrency(h.sellingPrice)}
+                  </Text>
+                </View>
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[styles.historySellText, { color: colors.accent }]}>
-                  Selling: {formatCurrency(h.sellingPrice)}
-                </Text>
-                <Text style={[styles.historyCostText, { color: colors.textMuted }]}>
-                  Cost: {formatCurrency(h.purchasePrice)}
-                </Text>
-              </View>
-            </View>
-          ))
-        ) : (
-          <Text style={{ color: colors.textMuted, textAlign: 'center', padding: 20 }}>
-            No past price revisions recorded for this model.
-          </Text>
-        )}
-      </ModalCard>
-
-      {/* Excel Import Modal */}
-      <ExcelImportModal
-        visible={excelModalVisible}
-        onClose={() => setExcelModalVisible(false)}
-        existingItems={priceList}
-        onImportComplete={() => {
-          setExcelModalVisible(false);
-          loadPriceList();
-        }}
-      />
+            ))
+          ) : (
+            <Text style={{ color: colors.textMuted, textAlign: 'center', padding: 20 }}>
+              No past price revisions recorded for this model.
+            </Text>
+          )}
+        </ModalCard>
+      )}
     </ScreenContainer>
   );
 };
 
 const styles = StyleSheet.create({
-  excelBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: RADIUS.md,
-  },
-  excelButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  excelBtnText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
   topFilterSection: {
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.md,
   },
+  brandTabsScroll: {
+    marginHorizontal: -SPACING.lg,
+    marginTop: SPACING.xs,
+  },
   brandTabsContainer: {
-    paddingBottom: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingRight: SPACING.xxl + 8,
+    gap: 8,
   },
   countSummaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    marginVertical: SPACING.xs,
+    paddingVertical: SPACING.xs,
   },
   countText: {
-    ...TYPOGRAPHY.captionSmall,
+    ...TYPOGRAPHY.caption,
+    fontWeight: '500',
   },
   listContent: {
     padding: SPACING.lg,
-    paddingBottom: SPACING.huge,
+    paddingBottom: 90,
   },
   priceCard: {
-    marginVertical: SPACING.xs,
+    marginBottom: SPACING.md,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -518,8 +300,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   modelName: {
-    ...TYPOGRAPHY.bodyBold,
+    ...TYPOGRAPHY.h3,
     fontSize: 16,
+    flexShrink: 1,
   },
   variantText: {
     ...TYPOGRAPHY.caption,
@@ -527,20 +310,21 @@ const styles = StyleSheet.create({
   },
   historyBtn: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: RADIUS.sm,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
     borderWidth: 1,
   },
   historyBtnText: {
-    ...TYPOGRAPHY.captionSmall,
+    ...TYPOGRAPHY.caption,
+    fontSize: 11,
     fontWeight: '600',
   },
   priceBox: {
     flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    padding: SPACING.md,
-    marginVertical: SPACING.xs,
   },
   priceCol: {
     flex: 1,
@@ -548,64 +332,41 @@ const styles = StyleSheet.create({
   },
   divider: {
     width: 1,
-    height: '100%',
+    height: 28,
   },
   priceLabel: {
-    ...TYPOGRAPHY.captionSmall,
+    ...TYPOGRAPHY.caption,
+    fontSize: 11,
     marginBottom: 2,
+    textAlign: 'center',
   },
   sellingValue: {
-    ...TYPOGRAPHY.bodyBold,
-    fontWeight: '800',
+    ...TYPOGRAPHY.h3,
+    fontSize: 15,
+    textAlign: 'center',
   },
-  costValue: {
-    ...TYPOGRAPHY.bodyBold,
-  },
-  marginValue: {
-    ...TYPOGRAPHY.bodyBold,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.sm,
-    borderTopWidth: 1,
-  },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  actionBtnText: {
-    ...TYPOGRAPHY.captionSmall,
-    fontWeight: '700',
-  },
-  label: {
+  availabilityValue: {
     ...TYPOGRAPHY.caption,
-    fontWeight: '600',
-    marginTop: SPACING.xs,
+    fontWeight: '700',
+    fontSize: 13,
   },
   historyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
   },
   historyDateText: {
-    ...TYPOGRAPHY.bodyBold,
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '600',
   },
   historyUserText: {
-    ...TYPOGRAPHY.captionSmall,
-    marginTop: 2,
+    ...TYPOGRAPHY.caption,
+    fontSize: 11,
   },
   historySellText: {
-    ...TYPOGRAPHY.bodyBold,
-  },
-  historyCostText: {
-    ...TYPOGRAPHY.captionSmall,
-    marginTop: 2,
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '700',
   },
 });

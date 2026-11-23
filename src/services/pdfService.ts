@@ -1,8 +1,9 @@
-import { NativeModules, Platform, Share, Alert } from 'react-native';
+import { NativeModules, Platform, Share } from 'react-native';
+import { AppAlertService } from '../context/AlertContext';
 import { SalarySlip, ShopConfig } from '../types';
 import { formatCurrency } from '../utils/format';
 
-const { PdfModule } = NativeModules;
+const getPdfModule = () => NativeModules.PdfModule;
 
 export class PdfService {
   /**
@@ -269,9 +270,10 @@ export class PdfService {
     const cleanMonth = (slip.month || 'Statement').replace(/\s+/g, '_');
     const jobName = `Salary_Slip_${cleanMonth}`;
 
-    if (Platform.OS === 'android' && PdfModule && typeof PdfModule.printHtml === 'function') {
+    const pdfMod = getPdfModule();
+    if (Platform.OS === 'android' && pdfMod && typeof pdfMod.printHtml === 'function') {
       try {
-        await PdfModule.printHtml(html, jobName);
+        await pdfMod.printHtml(html, jobName);
         return true;
       } catch (e: any) {
         console.warn('Native PDF print error:', e);
@@ -286,7 +288,7 @@ export class PdfService {
       });
       return true;
     } catch (e: any) {
-      Alert.alert('Share Error', e.message);
+      AppAlertService.showError('Share Error', e?.message || 'Could not share document.');
       return false;
     }
   }
@@ -542,7 +544,7 @@ export class PdfService {
   </table>
 
   <div class="warranty-card">
-    <strong>🛡️ STORE WARRANTY TERMS:</strong> This mobile is protected under a <strong>${sale.warrantyMonths || 3}-month store testing warranty</strong> covering internal hardware performance. Physical and water damage are exempt. Keep this original invoice for any warranty claims.
+    <strong>STORE TESTING WARRANTY TERMS:</strong> This mobile is protected under a <strong>${sale.warrantyMonths || 3}-month store testing warranty</strong> covering internal hardware performance. Physical and water damage are exempt. Keep this original invoice for any warranty claims.
   </div>
 
   <div class="footer-section">
@@ -578,9 +580,10 @@ export class PdfService {
     const html = this.generateTaxInvoiceHtml(sale, shopConfig);
     const jobName = `Tax_Invoice_${sale.invoiceNumber}_${(sale.buyerName || 'Customer').replace(/\s+/g, '_')}`;
 
-    if (Platform.OS === 'android' && PdfModule && typeof PdfModule.printHtml === 'function') {
+    const pdfMod = getPdfModule();
+    if (Platform.OS === 'android' && pdfMod && typeof pdfMod.printHtml === 'function') {
       try {
-        await PdfModule.printHtml(html, jobName);
+        await pdfMod.printHtml(html, jobName);
         return true;
       } catch (e: any) {
         console.warn('Native PDF print error:', e);
@@ -595,7 +598,59 @@ export class PdfService {
       });
       return true;
     } catch (e: any) {
-      Alert.alert('Share Error', e.message);
+      AppAlertService.showError('Share Error', e?.message || 'Could not share document.');
+      return false;
+    }
+  }
+
+  /**
+   * Generates a physical PDF file in cacheDir from Tax Invoice HTML
+   */
+  static async generateTaxInvoicePdfFile(sale: any, shopConfig: ShopConfig): Promise<string> {
+    const html = this.generateTaxInvoiceHtml(sale, shopConfig);
+    const fileName = `${sale.invoiceNumber || 'Tax_Invoice'}.pdf`;
+
+    const pdfMod = getPdfModule();
+    if (Platform.OS === 'android' && pdfMod && typeof pdfMod.generatePdfFromHtml === 'function') {
+      const filePath = await pdfMod.generatePdfFromHtml(html, fileName);
+      return filePath;
+    }
+
+    throw new Error('PDF file generation is only supported on Android with native PdfModule.');
+  }
+
+  /**
+   * Generates Tax Invoice PDF and shares it as a true document attachment via WhatsApp
+   * with fallback to native Android share sheet.
+   */
+  static async shareTaxInvoiceViaWhatsApp(sale: any, shopConfig: ShopConfig): Promise<boolean> {
+    try {
+      const html = this.generateTaxInvoiceHtml(sale, shopConfig);
+      const fileName = `${sale.invoiceNumber || 'Tax_Invoice'}.pdf`;
+      const optionalCaption = `Tax Invoice #${sale.invoiceNumber} from Parth Mobile Care for ${sale.brand} ${sale.model}`;
+
+      const pdfMod = getPdfModule();
+      if (Platform.OS === 'android' && pdfMod && typeof pdfMod.generatePdfFromHtml === 'function') {
+        const filePath = await pdfMod.generatePdfFromHtml(html, fileName);
+        if (typeof pdfMod.shareFileToWhatsApp === 'function') {
+          const recipientPhone = sale.buyerPhone || sale.customerPhone || sale.phone;
+          await pdfMod.shareFileToWhatsApp(filePath, optionalCaption, recipientPhone);
+          return true;
+        } else if (typeof pdfMod.shareFile === 'function') {
+          await pdfMod.shareFile(filePath, 'application/pdf', `Tax Invoice #${sale.invoiceNumber}`);
+          return true;
+        }
+      }
+
+      // Fallback for non-Android environments
+      await Share.share({
+        title: `Tax Invoice ${sale.invoiceNumber}`,
+        message: `${optionalCaption}\nAmount: ${formatCurrency(sale.sellingAmount)}\nBuyer: ${sale.buyerName}`,
+      });
+      return true;
+    } catch (e: any) {
+      console.warn('WhatsApp PDF share error:', e);
+      AppAlertService.showError('Invoice Share Error', e?.message || 'Could not generate or share Tax Invoice PDF.');
       return false;
     }
   }

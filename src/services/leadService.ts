@@ -5,6 +5,20 @@ import { getTodayDateString } from '../utils/format';
 
 export class LeadService {
   /**
+   * Fetch leads scoped by role and user ID: Admin sees all, Staff sees self (created or assigned)
+   */
+  static async getLeadsForUser(user: User, statusFilter?: LeadStatus): Promise<CustomerLead[]> {
+    const leads = await StorageService.getLeads();
+    const filtered = user.role === 'admin'
+      ? leads
+      : leads.filter(l => l.createdBy === user.id || l.assignedTo === user.id);
+    if (statusFilter) {
+      return filtered.filter(l => l.status === statusFilter);
+    }
+    return filtered;
+  }
+
+  /**
    * Fetch all leads or filter by status
    */
   static async getLeads(statusFilter?: LeadStatus): Promise<CustomerLead[]> {
@@ -19,11 +33,28 @@ export class LeadService {
    * Create a new Customer Lead
    */
   static async createLead(
-    leadData: Omit<CustomerLead, 'id' | 'createdAt' | 'updatedAt' | 'history' | 'status'>,
+    leadData: Omit<CustomerLead, 'id' | 'createdAt' | 'updatedAt' | 'history' | 'status' | 'createdBy' | 'createdByName'> & {
+      createdBy?: string;
+      createdByName?: string;
+    },
     currentUser: User,
     initialStatus: LeadStatus = 'new',
     triggerWhatsApp: boolean = true
   ): Promise<CustomerLead> {
+    // Duplicate submission guard (<10s window with identical customer phone and name)
+    const existingLeads = await StorageService.getLeads();
+    const tenSecondsAgo = Date.now() - 10000;
+    const duplicate = existingLeads.find(
+      l =>
+        l.phone === leadData.phone &&
+        l.name.trim().toLowerCase() === leadData.name.trim().toLowerCase() &&
+        new Date(l.createdAt).getTime() > tenSecondsAgo
+    );
+    if (duplicate) {
+      console.warn('[LeadService] Duplicate lead creation attempt ignored within 10s window.');
+      return duplicate;
+    }
+
     const timestamp = new Date().toISOString();
     const newLead: CustomerLead = {
       ...leadData,
@@ -31,6 +62,8 @@ export class LeadService {
       status: initialStatus,
       createdBy: currentUser.id,
       createdByName: currentUser.name,
+      assignedTo: currentUser.id,
+      assignedToName: currentUser.name,
       createdAt: timestamp,
       updatedAt: timestamp,
       history: [
@@ -43,7 +76,7 @@ export class LeadService {
       ],
     };
 
-    await StorageService.saveLead(newLead);
+    const savedLead = await StorageService.saveLead(newLead);
 
     // Add In-App Notification
     await StorageService.addNotification({
@@ -64,14 +97,14 @@ export class LeadService {
     if (newLead.followUpDate) {
       const timeDisplay = newLead.followUpTime ? ` at ${newLead.followUpTime}` : '';
       await StorageService.addNotification({
-        title: 'Follow-Up Scheduled ⏰',
+        title: 'Follow-Up Scheduled',
         body: `Follow-up call with ${newLead.name} (${newLead.phone}) scheduled for ${newLead.followUpDate}${timeDisplay}.`,
         type: 'follow_up',
         relatedId: newLead.id,
       });
     }
 
-    return newLead;
+    return savedLead || newLead;
   }
 
   /**
@@ -154,7 +187,7 @@ export class LeadService {
     ) {
       const timeDisplay = updatedLead.followUpTime ? ` at ${updatedLead.followUpTime}` : '';
       await StorageService.addNotification({
-        title: 'Follow-Up Rescheduled ⏰',
+        title: 'Follow-Up Rescheduled',
         body: `Follow-up call with ${updatedLead.name} (${updatedLead.phone}) updated to ${updatedLead.followUpDate}${timeDisplay}.`,
         type: 'follow_up',
         relatedId: updatedLead.id,

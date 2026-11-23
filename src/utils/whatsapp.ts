@@ -1,4 +1,5 @@
-import { Linking, Alert } from 'react-native';
+import { Linking } from 'react-native';
+import { AppAlertService } from '../context/AlertContext';
 
 export const MESSAGE_TEMPLATES = {
   LEAD_CREATED:
@@ -37,8 +38,8 @@ export async function sendWhatsAppMessage(
       await Linking.openURL(webUrl);
       return true;
     }
-  } catch (error) {
-    Alert.alert('WhatsApp Error', 'Could not open WhatsApp. Please check if WhatsApp is installed.');
+  } catch {
+    AppAlertService.showError('WhatsApp Error', 'Could not open WhatsApp. Please check if WhatsApp is installed.');
     return false;
   }
 }
@@ -56,8 +57,8 @@ export async function sendSmsMessage(
     const url = `sms:${cleanPhone}?body=${encodedMessage}`;
     await Linking.openURL(url);
     return true;
-  } catch (error) {
-    Alert.alert('SMS Error', 'Could not open messaging app.');
+  } catch {
+    AppAlertService.showError('SMS Error', 'Could not open messaging app.');
     return false;
   }
 }
@@ -71,8 +72,8 @@ export async function makePhoneCall(phone: string): Promise<boolean> {
     const url = `tel:${cleanPhone}`;
     await Linking.openURL(url);
     return true;
-  } catch (error) {
-    Alert.alert('Call Error', 'Could not open dialer.');
+  } catch {
+    AppAlertService.showError('Call Error', 'Could not open dialer.');
     return false;
   }
 }

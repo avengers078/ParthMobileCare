@@ -1,15 +1,23 @@
+jest.mock('../src/services/firebase', () => ({
+  __esModule: true,
+  default: {
+    init: jest.fn().mockResolvedValue(true),
+    getAuth: jest.fn(() => ({ currentUser: { uid: 'test_uid' } })),
+    getFirestore: jest.fn(() => ({})),
+    getStorage: jest.fn(() => ({})),
+  },
+}));
+
 import {
   generateDescriptorFromSeed,
   calculateCosineSimilarity,
-  calculateEuclideanDistance,
-  computeTemplateHash,
   FaceRecognitionService,
   BIOMETRIC_CONFIG,
 } from '../src/services/faceRecognitionService';
 import { StorageService } from '../src/services/storageService';
 import { AttendanceService } from '../src/services/attendanceService';
 import { DEFAULT_SHOP_CONFIG } from '../src/constants';
-import { User, FaceVerificationToken } from '../src/types';
+import { User } from '../src/types';
 
 describe('Biometric Face Recognition Attendance System', () => {
   const testUser: User = {
@@ -33,10 +41,6 @@ describe('Biometric Face Recognition Attendance System', () => {
   beforeEach(async () => {
     // Clear storage keys between tests
     await StorageService.deleteFaceTemplate(testUser.id, 'TEST');
-    const records = await StorageService.getAttendanceRecords(testUser.id);
-    for (const r of records) {
-      // Clear today's record if any
-    }
   });
 
   describe('1. 128-Dimensional Biometric Embedding & Mathematical Matching', () => {
@@ -285,10 +289,16 @@ describe('Biometric Face Recognition Attendance System', () => {
       });
     });
 
+    const testConfig = {
+      ...DEFAULT_SHOP_CONFIG,
+      openingTime: '00:00',
+      closingTime: '23:59',
+    };
+
     it('should reject Punch In when verification token is missing', async () => {
       const res = await AttendanceService.punchIn(
         testUser,
-        DEFAULT_SHOP_CONFIG,
+        testConfig,
         shopCoords
         // verificationToken omitted
       );
@@ -308,7 +318,7 @@ describe('Biometric Face Recognition Attendance System', () => {
 
       const res = await AttendanceService.punchIn(
         testUser,
-        DEFAULT_SHOP_CONFIG,
+        testConfig,
         shopCoords,
         token
       );
@@ -330,7 +340,7 @@ describe('Biometric Face Recognition Attendance System', () => {
 
       const res = await AttendanceService.punchOut(
         testUser,
-        DEFAULT_SHOP_CONFIG,
+        testConfig,
         shopCoords,
         punchOutToken
       );

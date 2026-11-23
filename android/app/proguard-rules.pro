@@ -8,3 +8,13 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# TensorFlow Lite Native Bindings
+-keep class org.tensorflow.lite.** { *; }
+-keepclassmembers class org.tensorflow.lite.** { *; }
+
+# React Native Vision Camera & Worklets Core
+-keep class com.mrousavy.camera.** { *; }
+-keep class com.worklets.** { *; }
+-keep class com.parthmobilecare.PdfModule { *; }
+

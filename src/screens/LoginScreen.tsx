@@ -1,48 +1,65 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
-  Alert,
-  KeyboardAvoidingView,
+  Dimensions,
   Platform,
   Image,
 } from 'react-native';
+import { Eye, EyeOff, UserPlus } from 'lucide-react-native';
 
 const APP_LOGO = require('../assets/logo.png');
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import {
   ScreenContainer,
-  AppCard,
   PrimaryButton,
+  OutlineButton,
   Input,
+  KeyboardAwareFormContainer,
 } from '../components';
-import { SPACING, TYPOGRAPHY } from '../theme';
+import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
+import { useAlert } from '../context/AlertContext';
 
-export const LoginScreen: React.FC = () => {
+const SCREEN_HEIGHT = Dimensions.get('screen').height;
+
+export const LoginScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const { login, sendPasswordReset } = useAuth();
   const { colors } = useTheme();
+  const { showSuccess, showError, showWarning } = useAlert();
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const passwordInputRef = useRef<any>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password) {
-      Alert.alert('Error', 'Please enter your Firebase account email and password.');
+      showWarning('Validation Error', 'Please enter your account email and password.');
       return;
     }
     setLoading(true);
     try {
       const result = await login(identifier, password);
       if (!result.success) {
-        Alert.alert('Sign In Failed', result.message);
+        if (result.message?.includes('Admin Web Dashboard') || result.message?.includes('Access Denied')) {
+          showWarning('Admin Access Restricted', result.message);
+        } else {
+          showError('Sign In Failed', result.message);
+        }
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Login failed.');
+      const msg = e?.message || String(e);
+      if (msg.includes('Admin Web Dashboard') || msg.includes('Access Denied')) {
+        showWarning('Admin Access Restricted', msg);
+      } else {
+        showError('Sign In Failed', e);
+      }
     } finally {
       setLoading(false);
     }
@@ -50,102 +67,164 @@ export const LoginScreen: React.FC = () => {
 
   const handleForgotPassword = () => {
     if (!identifier.trim()) {
-      Alert.alert('Reset Password', 'Enter your account email first.');
+      showWarning('Reset Password', 'Enter your account email first.');
       return;
     }
     sendPasswordReset(identifier).then(() => {
-      Alert.alert('Reset Email Sent', 'Check your inbox for the Firebase password reset link.');
+      showSuccess('Reset Email Sent', 'Check your inbox for the password reset link.');
     }).catch((error: any) => {
-      Alert.alert('Reset Failed', error?.message || 'Could not send a password reset email.');
+      showError('Reset Failed', error);
     });
   };
 
   return (
-    <ScreenContainer edges={['top', 'bottom', 'left', 'right']} keyboardAvoiding={false}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Brand Header with official mascot logo */}
-          <View style={styles.brandContainer}>
-            <View style={styles.logoBox}>
-              <Image
-                source={APP_LOGO}
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
+    <ScreenContainer
+      scrollable={false}
+      edges={['top', 'bottom', 'left', 'right']}
+      keyboardAvoiding={false}
+    >
+      <View style={styles.container}>
+        <KeyboardAwareFormContainer
+          cardMode={true}
+          style={styles.formContainer}
+          contentStyle={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+          bodyStyle={styles.cardBody}
+          autoScrollOnFocus={false}
+          onKeyboardChange={(visible) => {
+            setKeyboardVisible(visible);
+          }}
+          header={
+            <View style={styles.brandContainer}>
+              <View style={styles.logoBox}>
+                <Image
+                  source={APP_LOGO}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={[styles.brandTitle, { color: colors.text }]}>
+                Parth Mobile Care
+              </Text>
+              <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>
+                Staff & Customer Management System
+              </Text>
             </View>
-            <Text style={[styles.brandTitle, { color: colors.text }]}>
-              Parth Mobile Care
+          }
+        >
+          <Text
+            accessibilityLabel="Sign In to Account"
+            style={[styles.formTitle, { color: colors.text }]}
+          >
+            Welcome Back
+          </Text>
+          <Text
+            numberOfLines={2}
+            style={[styles.formSub, { color: colors.textSecondary }]}
+          >
+            Sign in with your staff account.
+          </Text>
+
+          <Input
+            label="Email"
+            placeholder="staff@parthmobile.com"
+            value={identifier}
+            onChangeText={setIdentifier}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            returnKeyType="next"
+            onSubmitEditing={() => passwordInputRef.current?.focus()}
+            blurOnSubmit={false}
+          />
+
+          <Input
+            ref={passwordInputRef}
+            label="Password"
+            placeholder="••••••••"
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={setPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="password"
+            returnKeyType="done"
+            onSubmitEditing={handleLogin}
+            rightIcon={
+              <TouchableOpacity
+                onPress={() => setShowPassword(prev => !prev)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                accessibilityHint="Toggles password visibility"
+              >
+                {showPassword ? (
+                  <EyeOff size={20} color={colors.textSecondary} />
+                ) : (
+                  <Eye size={20} color={colors.textSecondary} />
+                )}
+              </TouchableOpacity>
+            }
+          />
+
+          <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn}>
+            <Text style={[styles.forgotText, { color: colors.primary }]}>
+              Forgot Password?
             </Text>
-            <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>
-              Staff & Customer Management System
-            </Text>
+          </TouchableOpacity>
+
+          <PrimaryButton
+            title="Sign In"
+            onPress={handleLogin}
+            loading={loading}
+            size="large"
+            style={{ marginTop: SPACING.sm }}
+          />
+
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <Text style={[styles.dividerText, { color: colors.textSecondary }]}>OR</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
           </View>
 
-          {/* Credentials Form */}
-          <AppCard style={styles.card}>
-            <Text style={[styles.formTitle, { color: colors.text }]}>
-              Sign In to Account
-            </Text>
-            <Text style={[styles.formSub, { color: colors.textSecondary }]}>
-              Use the email and password for your Firebase account:
-            </Text>
+          <OutlineButton
+            title="New staff? Create Account"
+            onPress={() => {
+              navigation?.navigate('Register');
+            }}
+            size="large"
+            icon={<UserPlus size={18} color={colors.primary} />}
+          />
+        </KeyboardAwareFormContainer>
 
-            <Input
-              label="Email"
-              placeholder="admin@parthmobile.com"
-              value={identifier}
-              onChangeText={setIdentifier}
-              autoCapitalize="none"
-            />
-
-            <Input
-              label="Password"
-              placeholder="••••••••"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-            />
-
-            <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn}>
-              <Text style={[styles.forgotText, { color: colors.primary }]}>
-                Forgot Password?
-              </Text>
-            </TouchableOpacity>
-
-            <PrimaryButton
-              title="Sign In"
-              onPress={handleLogin}
-              loading={loading}
-              size="large"
-              style={{ marginTop: SPACING.sm }}
-            />
-          </AppCard>
-
-          {/* App Footer */}
+        {/* App Footer outside the card */}
+        {!keyboardVisible && (
           <Text style={[styles.footerText, { color: colors.textMuted }]}>
-            Parth Mobile Care • Enterprise CRM v1.0.0
+            Parth Mobile Care • Staff Mobile Application
           </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        )}
+      </View>
     </ScreenContainer>
   );
 };
 
 const styles = StyleSheet.create({
-  keyboardView: {
+  container: {
     flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SCREEN_HEIGHT >= 800 ? SPACING.huge : SPACING.xxl,
+    paddingBottom: SPACING.md,
   },
-  content: {
+  formContainer: {
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
+  },
+  card: {
+    borderRadius: RADIUS.xl,
+  },
+  cardBody: {
     padding: SPACING.xl,
-    justifyContent: 'center',
-    flexGrow: 1,
   },
   brandContainer: {
     alignItems: 'center',
@@ -173,13 +252,12 @@ const styles = StyleSheet.create({
   brandTitle: {
     ...TYPOGRAPHY.h1,
     letterSpacing: -0.5,
+    textAlign: 'center',
   },
   brandTagline: {
     ...TYPOGRAPHY.caption,
     marginTop: 4,
-  },
-  card: {
-    padding: SPACING.xl,
+    textAlign: 'center',
   },
   formTitle: {
     ...TYPOGRAPHY.h2,
@@ -196,6 +274,20 @@ const styles = StyleSheet.create({
   forgotText: {
     ...TYPOGRAPHY.caption,
     fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: SPACING.md,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    ...TYPOGRAPHY.captionSmall,
+    fontWeight: '700',
+    marginHorizontal: SPACING.md,
   },
   footerText: {
     ...TYPOGRAPHY.captionSmall,

@@ -7,6 +7,7 @@ import {
   StyleProp,
   Platform,
   View,
+  AccessibilityRole,
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { RADIUS, SPACING, SHADOWS } from '../../theme';
@@ -22,6 +23,9 @@ export interface AnimatedCardProps {
   activeScale?: number;
   testID?: string;
   disabled?: boolean;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 /**
@@ -41,6 +45,9 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
   activeScale = 0.975,
   testID,
   disabled = false,
+  accessibilityRole,
+  accessibilityLabel,
+  accessibilityHint,
 }) => {
   const { colors, isDark } = useTheme();
 
@@ -183,6 +190,9 @@ export const AnimatedCard: React.FC<AnimatedCardProps> = ({
       <Pressable
         testID={testID}
         disabled={disabled}
+        accessibilityRole={accessibilityRole}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
         onPress={onPress}
         onLongPress={onLongPress}
         onPressIn={handlePressIn}

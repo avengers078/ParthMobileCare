@@ -7,6 +7,7 @@ import {
   Camera,
   CheckCircle2,
   ChevronLeft,
+  ChevronRight,
   Clock3,
   FileText,
   Home,
@@ -26,13 +27,15 @@ import {
   Users,
   Wallet,
   XCircle,
+  Sun,
+  Moon,
 } from 'lucide-react-native';
 
 export type AppIconName =
   | 'archive' | 'analytics' | 'bell' | 'calendar' | 'camera' | 'check'
-  | 'chevron-left' | 'clock' | 'file' | 'home' | 'location' | 'message' | 'package' | 'phone' | 'plus'
+  | 'chevron-left' | 'chevron-right' | 'clock' | 'file' | 'home' | 'location' | 'message' | 'package' | 'phone' | 'plus'
   | 'search' | 'settings' | 'cart' | 'smartphone' | 'tag' | 'trash'
-  | 'upload' | 'user' | 'users' | 'wallet' | 'error';
+  | 'upload' | 'user' | 'users' | 'wallet' | 'error' | 'sun' | 'moon' | 'device';
 
 const ICONS = {
   archive: Archive,
@@ -42,6 +45,7 @@ const ICONS = {
   camera: Camera,
   check: CheckCircle2,
   'chevron-left': ChevronLeft,
+  'chevron-right': ChevronRight,
   clock: Clock3,
   file: FileText,
   home: Home,
@@ -54,6 +58,9 @@ const ICONS = {
   settings: Settings,
   cart: ShoppingCart,
   smartphone: Smartphone,
+  device: Smartphone,
+  sun: Sun,
+  moon: Moon,
   tag: Tag,
   trash: Trash2,
   upload: Upload,

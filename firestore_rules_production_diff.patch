@@ -1,0 +1,948 @@
+--- deployed_production_firestore.rules	2026-11-05 12:04:29
++++ firestore.rules	2026-11-05 00:07:52
+@@ -28,6 +28,7 @@
+     //    - userName: string (1-100 chars)
+     //    - userRole: string ('admin' | 'manager' | 'staff')
+     //    - date: string (1-20 chars, YYYY-MM-DD)
++    //    - timestamp: string (optional, 0-50 chars)
+     //    - punchInTime: string (optional, 0-50 chars)
+     //    - punchInCoords: map (optional, latitude, longitude, distanceMeters)
+     //    - punchOutTime: string (optional, 0-50 chars)
+@@ -41,6 +42,7 @@
+     //    - faceVerificationScore: number (optional)
+     //    - faceLivenessScore: number (optional)
+     //    - faceVerificationTokenId: string (optional, 0-100 chars)
++    //    - deviceId: string (optional, 0-100 chars)
+     //    - _syncedAt: string (optional, 0-50 chars)
+     //
+     // 3. leads/{leadId}
+@@ -214,11 +216,11 @@
+     }
+ 
+     function isAdmin() {
+-      return isAuthenticated() && (
+-        ('role' in request.auth.token && request.auth.token.role == 'admin') ||
+-        ('email' in request.auth.token && request.auth.token.email == 'admin@parthmobile.com') ||
+-        (userDocExists() && ('role' in getUserData()) && getUserData().role == 'admin')
+-      );
++      return isAuthenticated() &&
++        userDocExists() &&
++        ('role' in getUserData()) &&
++        getUserData().role == 'admin' &&
++        getUserData().isActive == true;
+     }
+ 
+     function isManagerOrAdmin() {
+@@ -247,43 +249,49 @@
+       let allowed = [
+         'id', 'name', 'email', 'phone', 'role', 'designation', 'avatarUrl',
+         'joinedDate', 'basicSalary', 'monthlyTarget', 'isActive',
+-        'hasFaceRegistered', 'faceRegistrationDate', 'faceEnrollmentStatus',
++        'registrationStatus', 'emailVerified',
++        'hasFaceRegistered', 'faceRegistrationDate', 'faceEnrollmentStatus', 'faceModelVersion',
+         'faceApprovedAt', 'faceApprovedBy', 'faceRejectionReason',
+         'failedVerificationAttempts', 'lastFailedVerificationReason', 'lastFailedVerificationAt',
+-        'createdBy', 'createdAt', 'passwordSetupStatus', '_syncedAt'
++        'createdBy', 'createdAt', 'passwordSetupStatus', 'invitationToken',
++        'deviceId', 'devicePublicKey', 'deviceModel', 'devicePlatform',
++        'deviceBindingStatus', 'deviceRegisteredAt', 'deviceApprovedAt', 'deviceApprovedBy',
++        'deviceRejectionReason', 'approvedAt', 'approvedBy', 'approvedByName',
++        'rejectedAt', 'rejectedBy', 'rejectedByName', 'rejectionReason', '_syncedAt'
+       ];
+       let required = ['id', 'name', 'email', 'phone', 'role', 'designation', 'joinedDate', 'basicSalary', 'monthlyTarget', 'isActive'];
+ 
+       return data.keys().hasOnly(allowed) &&
+              data.keys().hasAll(required) &&
+-             isValidString(data.id, 1, 100) &&
+-             isValidString(data.name, 1, 100) &&
+-             isValidEmail(data.email) &&
+-             isValidString(data.phone, 7, 20) &&
++             data.id is string && data.id.size() >= 1 && data.id.size() <= 100 &&
++             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
++             isValidEmail(data.email) &&
++             data.phone is string && data.phone.size() >= 7 && data.phone.size() <= 20 &&
+              data.role in ['admin', 'manager', 'staff'] &&
+-             isValidString(data.designation, 1, 100) &&
+-             isValidString(data.joinedDate, 1, 50) &&
++             data.designation is string && data.designation.size() >= 1 && data.designation.size() <= 100 &&
++             data.joinedDate is string && data.joinedDate.size() >= 1 && data.joinedDate.size() <= 50 &&
+              data.basicSalary is number && data.basicSalary >= 0 &&
+              data.monthlyTarget is number && data.monthlyTarget >= 0 &&
+              data.isActive is bool &&
+-             isValidOptionalString('avatarUrl', data, 0, 500000) &&
++             (!('deviceId' in data) || (data.deviceId is string && data.deviceId.size() >= 1 && data.deviceId.size() <= 100)) &&
++             (!('devicePublicKey' in data) || (data.devicePublicKey is string && data.devicePublicKey.size() >= 1 && data.devicePublicKey.size() <= 2000)) &&
++             (!('deviceModel' in data) || (data.deviceModel is string && data.deviceModel.size() >= 1 && data.deviceModel.size() <= 100)) &&
++             (!('devicePlatform' in data) || data.devicePlatform in ['android', 'ios']) &&
++             (!('deviceRegisteredAt' in data) || (data.deviceRegisteredAt is string && data.deviceRegisteredAt.size() >= 1 && data.deviceRegisteredAt.size() <= 50)) &&
++             (!('deviceBindingStatus' in data) || data.deviceBindingStatus in ['unregistered', 'pending_approval', 'approved', 'rejected']) &&
++             (!('registrationStatus' in data) || data.registrationStatus in ['pending', 'approved', 'rejected']) &&
++             (!('emailVerified' in data) || data.emailVerified is bool) &&
++             (!('faceEnrollmentStatus' in data) || data.faceEnrollmentStatus in ['not_enrolled', 'pending_review', 'pending', 'pending_approval', 'approved', 'rejected']) &&
+              (!('hasFaceRegistered' in data) || data.hasFaceRegistered is bool) &&
+-             isValidOptionalString('faceRegistrationDate', data, 0, 50) &&
+-             isValidOptionalString('faceEnrollmentStatus', data, 0, 50) &&
+-             isValidOptionalString('faceApprovedAt', data, 0, 50) &&
+-             isValidOptionalString('faceApprovedBy', data, 0, 100) &&
+-             isValidOptionalString('faceRejectionReason', data, 0, 1000) &&
+-             (!('failedVerificationAttempts' in data) || data.failedVerificationAttempts is number) &&
+-             isValidOptionalString('lastFailedVerificationReason', data, 0, 1000) &&
+-             isValidOptionalString('lastFailedVerificationAt', data, 0, 50) &&
+-             isValidOptionalString('createdBy', data, 0, 100) &&
+-             isValidOptionalString('createdAt', data, 0, 50) &&
+-             isValidOptionalString('passwordSetupStatus', data, 0, 50) &&
+-             isValidOptionalString('_syncedAt', data, 0, 50);
++             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500000)) &&
++             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 50)) &&
++             (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 100)) &&
++             (!('_syncedAt' in data) || (data._syncedAt is string && data._syncedAt.size() >= 1 && data._syncedAt.size() <= 50)) &&
++             (!('failedVerificationAttempts' in data) || (data.failedVerificationAttempts is number && data.failedVerificationAttempts >= 0));
+     }
+ 
+     function isValidAttendance(data) {
+-      let allowed = ['id', 'userId', 'userName', 'userRole', 'date', 'punchInTime', 'punchInCoords', 'punchOutTime', 'punchOutCoords', 'status', 'totalHours', 'isLate', 'isEarlyExit', 'notes', 'verificationMethod', 'faceVerificationScore', 'faceLivenessScore', 'faceVerificationTokenId', '_syncedAt'];
++      let allowed = ['id', 'userId', 'userName', 'userRole', 'date', 'timestamp', 'punchInTime', 'punchInCoords', 'punchOutTime', 'punchOutCoords', 'status', 'totalHours', 'isLate', 'isEarlyExit', 'notes', 'verificationMethod', 'faceVerificationScore', 'faceLivenessScore', 'faceVerificationTokenId', 'deviceId', '_syncedAt'];
+       let required = ['id', 'userId', 'userName', 'userRole', 'date', 'status', 'totalHours', 'isLate', 'isEarlyExit'];
+ 
+       return data.keys().hasOnly(allowed) &&
+@@ -293,6 +301,7 @@
+              isValidString(data.userName, 1, 100) &&
+              data.userRole in ['admin', 'manager', 'staff'] &&
+              isValidString(data.date, 1, 20) &&
++             isValidOptionalString('timestamp', data, 0, 50) &&
+              data.status in ['present', 'late', 'half_day', 'early_exit', 'absent'] &&
+              data.totalHours is number && data.totalHours >= 0 &&
+              data.isLate is bool &&
+@@ -306,6 +315,7 @@
+              (!('faceVerificationScore' in data) || data.faceVerificationScore is number) &&
+              (!('faceLivenessScore' in data) || data.faceLivenessScore is number) &&
+              isValidOptionalString('faceVerificationTokenId', data, 0, 100) &&
++             isValidOptionalString('deviceId', data, 0, 100) &&
+              isValidOptionalString('_syncedAt', data, 0, 50);
+     }
+ 
+@@ -356,23 +366,19 @@
+     }
+ 
+     function isValidSecondHandPurchase(data) {
+-      let allowed = ['id', 'customerName', 'phone', 'alternatePhone', 'address', 'aadhaarNumber', 'aadhaarFrontUri', 'aadhaarBackUri', 'aadhaarPhotoFront', 'aadhaarPhotoBack', 'aadhaarCardPhotoUri', 'customerPhotoUri', 'brand', 'model', 'ram', 'storage', 'imei', 'condition', 'purchaseAmount', 'billImageUri', 'digitalSignatureUri', 'purchaseDate', 'purchaseTime', 'purchasedByStaffId', 'purchasedByStaffName', 'status', 'notes', '_syncedAt'];
+-      let required = ['id', 'customerName', 'phone', 'address', 'aadhaarNumber', 'brand', 'model', 'imei', 'condition', 'purchaseAmount', 'digitalSignatureUri', 'purchaseDate', 'purchaseTime', 'purchasedByStaffId', 'purchasedByStaffName', 'status'];
++      let allowed = [
++        'id', 'brand', 'model', 'ram', 'storage', 'imei', 'condition', 'purchaseAmount',
++        'purchaseDate', 'purchaseTime', 'purchasedByStaffId', 'purchasedByStaffName',
++        'status', 'notes', 'hasSensitiveKyc', '_syncedAt'
++      ];
++      let required = [
++        'id', 'brand', 'model', 'imei', 'condition', 'purchaseAmount',
++        'purchaseDate', 'purchaseTime', 'purchasedByStaffId', 'purchasedByStaffName', 'status'
++      ];
+ 
+       return data.keys().hasOnly(allowed) &&
+              data.keys().hasAll(required) &&
+              isValidString(data.id, 1, 100) &&
+-             isValidString(data.customerName, 1, 100) &&
+-             isValidString(data.phone, 7, 20) &&
+-             isValidOptionalString('alternatePhone', data, 0, 20) &&
+-             isValidString(data.address, 1, 250) &&
+-             isValidString(data.aadhaarNumber, 4, 20) &&
+-             isValidOptionalString('aadhaarFrontUri', data, 0, 500000) &&
+-             isValidOptionalString('aadhaarBackUri', data, 0, 500000) &&
+-             isValidOptionalString('aadhaarPhotoFront', data, 0, 500000) &&
+-             isValidOptionalString('aadhaarPhotoBack', data, 0, 500000) &&
+-             isValidOptionalString('aadhaarCardPhotoUri', data, 0, 500000) &&
+-             isValidOptionalString('customerPhotoUri', data, 0, 500000) &&
+              isValidString(data.brand, 1, 50) &&
+              isValidString(data.model, 1, 100) &&
+              isValidOptionalString('ram', data, 0, 30) &&
+@@ -380,20 +386,64 @@
+              isValidString(data.imei, 5, 30) &&
+              isValidString(data.condition, 1, 50) &&
+              data.purchaseAmount is number && data.purchaseAmount >= 0 &&
+-             isValidOptionalString('billImageUri', data, 0, 500000) &&
+-             isValidString(data.digitalSignatureUri, 1, 500000) &&
+              isValidString(data.purchaseDate, 1, 50) &&
+              isValidString(data.purchaseTime, 1, 50) &&
+              isValidString(data.purchasedByStaffId, 1, 100) &&
+              isValidString(data.purchasedByStaffName, 1, 100) &&
+              data.status in ['in_stock', 'sold'] &&
+              isValidOptionalString('notes', data, 0, 1000) &&
++             (!('hasSensitiveKyc' in data) || data.hasSensitiveKyc is bool) &&
+              isValidOptionalString('_syncedAt', data, 0, 50);
+     }
+ 
++    function isValidSecondHandKyc(data) {
++      let allowed = [
++        'id', 'purchaseId', 'customerName', 'phone', 'alternatePhone', 'address',
++        'aadhaarNumber', 'aadhaarFrontUri', 'aadhaarBackUri', 'aadhaarPhotoFront',
++        'aadhaarPhotoBack', 'aadhaarCardPhotoUri', 'customerPhotoUri',
++        'billImageUri', 'digitalSignatureUri', 'createdAt', 'recordedAt',
++        'recordedByStaffId', 'recordedByStaffName', '_syncedAt'
++      ];
++      let required = ['id', 'purchaseId', 'customerName', 'phone', 'address', 'aadhaarNumber', 'recordedByStaffId', 'recordedByStaffName'];
++
++      return data.keys().hasOnly(allowed) &&
++             data.keys().hasAll(required) &&
++             isValidString(data.id, 1, 100) &&
++             isValidString(data.purchaseId, 1, 100) &&
++             isValidString(data.customerName, 1, 100) &&
++             isValidString(data.phone, 7, 20) &&
++             isValidOptionalString('alternatePhone', data, 0, 20) &&
++             isValidString(data.address, 1, 250) &&
++             isValidString(data.aadhaarNumber, 4, 20) &&
++             isValidOptionalString('aadhaarFrontUri', data, 0, 500000) &&
++             isValidOptionalString('aadhaarBackUri', data, 0, 500000) &&
++             isValidOptionalString('aadhaarPhotoFront', data, 0, 500000) &&
++             isValidOptionalString('aadhaarPhotoBack', data, 0, 500000) &&
++             isValidOptionalString('aadhaarCardPhotoUri', data, 0, 500000) &&
++             isValidOptionalString('customerPhotoUri', data, 0, 500000) &&
++             isValidOptionalString('billImageUri', data, 0, 500000) &&
++             isValidOptionalString('digitalSignatureUri', data, 0, 500000) &&
++             isValidOptionalString('createdAt', data, 0, 50) &&
++             isValidOptionalString('recordedAt', data, 0, 50) &&
++             isValidString(data.recordedByStaffId, 1, 100) &&
++             isValidString(data.recordedByStaffName, 1, 100) &&
++             isValidOptionalString('_syncedAt', data, 0, 50);
++    }
++
+     function isValidSecondHandSale(data) {
+-      let allowed = ['id', 'purchaseRecordId', 'buyerName', 'phone', 'alternatePhone', 'address', 'aadhaarNumber', 'aadhaarPhotoUri', 'buyerPhotoUri', 'brand', 'model', 'ram', 'storage', 'imei', 'sellingAmount', 'purchaseAmount', 'profitAmount', 'marginPercent', 'invoiceNumber', 'digitalSignatureUri', 'saleDate', 'saleTime', 'soldByStaffId', 'soldByStaffName', 'paymentMethod', 'warrantyMonths', 'notes', '_syncedAt'];
+-      let required = ['id', 'buyerName', 'phone', 'address', 'aadhaarNumber', 'brand', 'model', 'imei', 'sellingAmount', 'purchaseAmount', 'profitAmount', 'marginPercent', 'invoiceNumber', 'digitalSignatureUri', 'saleDate', 'saleTime', 'soldByStaffId', 'soldByStaffName', 'paymentMethod'];
++      let allowed = [
++        'id', 'purchaseRecordId', 'buyerName', 'phone', 'address', 'brand', 'model',
++        'ram', 'storage', 'imei', 'sellingAmount', 'purchaseAmount', 'profitAmount',
++        'marginPercent', 'invoiceNumber', 'digitalSignatureUri', 'saleDate', 'saleTime',
++        'soldByStaffId', 'soldByStaffName', 'paymentMethod', 'warrantyMonths', 'notes',
++        'hasSensitiveKyc', '_syncedAt'
++      ];
++      let required = [
++        'id', 'buyerName', 'phone', 'address', 'brand', 'model', 'imei',
++        'sellingAmount', 'purchaseAmount', 'profitAmount', 'marginPercent',
++        'invoiceNumber', 'digitalSignatureUri', 'saleDate', 'saleTime',
++        'soldByStaffId', 'soldByStaffName', 'paymentMethod'
++      ];
+ 
+       return data.keys().hasOnly(allowed) &&
+              data.keys().hasAll(required) &&
+@@ -401,11 +451,7 @@
+              isValidOptionalString('purchaseRecordId', data, 0, 100) &&
+              isValidString(data.buyerName, 1, 100) &&
+              isValidString(data.phone, 7, 20) &&
+-             isValidOptionalString('alternatePhone', data, 0, 20) &&
+              isValidString(data.address, 1, 250) &&
+-             isValidString(data.aadhaarNumber, 4, 20) &&
+-             isValidOptionalString('aadhaarPhotoUri', data, 0, 500000) &&
+-             isValidOptionalString('buyerPhotoUri', data, 0, 500000) &&
+              isValidString(data.brand, 1, 50) &&
+              isValidString(data.model, 1, 100) &&
+              isValidOptionalString('ram', data, 0, 30) &&
+@@ -424,9 +470,37 @@
+              data.paymentMethod in ['Cash', 'UPI', 'Card', 'Bank Transfer'] &&
+              (!('warrantyMonths' in data) || (data.warrantyMonths is number && data.warrantyMonths >= 0)) &&
+              isValidOptionalString('notes', data, 0, 1000) &&
++             (!('hasSensitiveKyc' in data) || data.hasSensitiveKyc is bool) &&
+              isValidOptionalString('_syncedAt', data, 0, 50);
+     }
+ 
++    function isValidSecondHandSaleKyc(data) {
++      let allowed = [
++        'id', 'saleId', 'buyerName', 'phone', 'alternatePhone', 'address',
++        'aadhaarNumber', 'aadhaarPhotoUri', 'buyerPhotoUri', 'digitalSignatureUri',
++        'recordedByStaffId', 'recordedByStaffName', 'recordedAt', 'createdAt', '_syncedAt'
++      ];
++      let required = ['id', 'saleId', 'buyerName', 'phone', 'address', 'aadhaarNumber', 'recordedByStaffId', 'recordedByStaffName'];
++
++      return data.keys().hasOnly(allowed) &&
++             data.keys().hasAll(required) &&
++             isValidString(data.id, 1, 100) &&
++             isValidString(data.saleId, 1, 100) &&
++             isValidString(data.buyerName, 1, 100) &&
++             isValidString(data.phone, 7, 20) &&
++             isValidOptionalString('alternatePhone', data, 0, 20) &&
++             isValidString(data.address, 1, 250) &&
++             isValidString(data.aadhaarNumber, 4, 20) &&
++             isValidOptionalString('aadhaarPhotoUri', data, 0, 500000) &&
++             isValidOptionalString('buyerPhotoUri', data, 0, 500000) &&
++             isValidOptionalString('digitalSignatureUri', data, 0, 500000) &&
++             isValidString(data.recordedByStaffId, 1, 100) &&
++             isValidString(data.recordedByStaffName, 1, 100) &&
++             isValidOptionalString('recordedAt', data, 0, 50) &&
++             isValidOptionalString('createdAt', data, 0, 50) &&
++             isValidOptionalString('_syncedAt', data, 0, 50);
++    }
++
+     function isValidSalesTarget(data) {
+       let allowed = ['id', 'staffId', 'staffName', 'month', 'targetAmount', 'achievedAmount', 'targetUnits', 'achievedUnits', 'incentivePercent', 'calculatedIncentive', '_syncedAt'];
+       let required = ['id', 'staffId', 'staffName', 'month', 'targetAmount', 'achievedAmount', 'targetUnits', 'achievedUnits', 'incentivePercent', 'calculatedIncentive'];
+@@ -473,15 +547,16 @@
+     }
+ 
+     function isValidNotification(data) {
+-      let allowed = ['id', 'title', 'body', 'type', 'timestamp', 'read', 'relatedId', '_syncedAt'];
+-      let required = ['id', 'title', 'body', 'type', 'timestamp', 'read'];
++      let allowed = ['id', 'userId', 'title', 'body', 'type', 'timestamp', 'read', 'relatedId', '_syncedAt'];
++      let required = ['id', 'userId', 'title', 'body', 'type', 'timestamp', 'read'];
+ 
+       return data.keys().hasOnly(allowed) &&
+              data.keys().hasAll(required) &&
+              isValidString(data.id, 1, 100) &&
++             isValidString(data.userId, 1, 100) &&
+              isValidString(data.title, 1, 150) &&
+              isValidString(data.body, 1, 500) &&
+-             data.type in ['follow_up', 'attendance', 'lead', 'purchase', 'sale', 'target'] &&
++             data.type in ['follow_up', 'attendance', 'lead', 'purchase', 'sale', 'target', 'announcement'] &&
+              isValidString(data.timestamp, 1, 50) &&
+              data.read is bool &&
+              isValidOptionalString('relatedId', data, 0, 100) &&
+@@ -489,11 +564,12 @@
+     }
+ 
+     function isValidShopConfig(data) {
+-      let allowed = ['shopName', 'tagline', 'shopAddress', 'phone', 'alternatePhone', 'email', 'gstNumber', 'latitude', 'longitude', 'allowedRadiusMeters', 'openingTime', 'closingTime', '_syncedAt'];
++      let allowed = ['id', 'shopName', 'tagline', 'shopAddress', 'phone', 'alternatePhone', 'email', 'gstNumber', 'latitude', 'longitude', 'allowedRadiusMeters', 'openingTime', 'closingTime', '_syncedAt'];
+       let required = ['shopName', 'tagline', 'shopAddress', 'phone', 'alternatePhone', 'email', 'gstNumber', 'latitude', 'longitude', 'allowedRadiusMeters', 'openingTime', 'closingTime'];
+ 
+       return data.keys().hasOnly(allowed) &&
+              data.keys().hasAll(required) &&
++             isValidOptionalString('id', data, 0, 100) &&
+              isValidString(data.shopName, 1, 100) &&
+              isValidString(data.tagline, 0, 150) &&
+              isValidString(data.shopAddress, 1, 250) &&
+@@ -518,91 +594,321 @@
+              isValidOptionalString('_syncedAt', data, 0, 50);
+     }
+ 
++    function isValidStaffInvitation(data) {
++      let allowed = [
++        'id', 'token', 'name', 'email', 'phone', 'role', 'designation',
++        'basicSalary', 'monthlyTarget', 'createdBy', 'createdByName',
++        'createdAt', 'expiresAt', 'status', 'acceptedAt', 'acceptedByUid',
++        'revokedAt', 'revokedBy', '_syncedAt'
++      ];
++      let required = ['id', 'token', 'name', 'email', 'phone', 'role', 'designation', 'createdBy', 'createdAt', 'expiresAt', 'status'];
++
++      return data.keys().hasOnly(allowed) &&
++             data.keys().hasAll(required) &&
++             isValidString(data.id, 1, 100) &&
++             isValidString(data.token, 1, 100) &&
++             isValidString(data.name, 1, 100) &&
++             isValidEmail(data.email) &&
++             isValidString(data.phone, 7, 20) &&
++             data.role == 'staff' &&
++             isValidString(data.designation, 1, 100) &&
++             isValidString(data.createdBy, 1, 100) &&
++             isValidString(data.createdAt, 1, 50) &&
++             isValidString(data.expiresAt, 1, 50) &&
++             data.status in ['pending', 'accepted', 'revoked', 'expired'] &&
++             (!('basicSalary' in data) || (data.basicSalary is number && data.basicSalary >= 0)) &&
++             (!('monthlyTarget' in data) || (data.monthlyTarget is number && data.monthlyTarget >= 0));
++    }
++
++    function isValidAdminAuditLog(data) {
++      let allowed = ['id', 'adminId', 'adminName', 'actionType', 'targetRecordId', 'targetRecordTitle', 'timestamp', 'details', 'beforeValue', 'afterValue', '_syncedAt'];
++      let required = ['id', 'adminId', 'adminName', 'actionType', 'targetRecordId', 'timestamp'];
++
++      return data.keys().hasOnly(allowed) &&
++             data.keys().hasAll(required) &&
++             isValidString(data.id, 1, 100) &&
++             isValidString(data.adminId, 1, 100) &&
++             isValidString(data.adminName, 1, 100) &&
++             isValidString(data.actionType, 1, 100) &&
++             isValidString(data.targetRecordId, 1, 100) &&
++             isValidString(data.timestamp, 1, 50) &&
++             data.adminId == request.auth.uid;
++    }
++
++    function isValidAttendanceAuditLog(data) {
++      let allowed = ['id', 'userId', 'userName', 'action', 'timestamp', 'adminId', 'adminName', 'details', '_syncedAt'];
++      let required = ['id', 'userId', 'userName', 'action', 'timestamp'];
++
++      return data.keys().hasOnly(allowed) &&
++             data.keys().hasAll(required) &&
++             isValidString(data.id, 1, 100) &&
++             isValidString(data.userId, 1, 100) &&
++             isValidString(data.userName, 1, 100) &&
++             isValidString(data.action, 1, 50) &&
++             isValidString(data.timestamp, 1, 50) &&
++             isValidOptionalString('adminId', data, 0, 100) &&
++             isValidOptionalString('adminName', data, 0, 100) &&
++             isValidOptionalString('details', data, 0, 500) &&
++             isValidOptionalString('_syncedAt', data, 0, 50);
++    }
++
++    function isValidDeviceChangeRequest(data) {
++      let allowed = [
++        'id', 'userId', 'userName', 'userEmail', 'currentDeviceId', 'currentDeviceModel',
++        'newDeviceId', 'newDevicePublicKey', 'newDeviceModel', 'newDevicePlatform',
++        'reason', 'status', 'createdAt', 'reviewedAt', 'reviewedBy', 'reviewedByName',
++        'rejectionReason', '_syncedAt'
++      ];
++      let required = [
++        'id', 'userId', 'userName', 'userEmail', 'newDeviceId', 'newDevicePublicKey',
++        'newDeviceModel', 'newDevicePlatform', 'reason', 'status', 'createdAt'
++      ];
++
++      return data.keys().hasOnly(allowed) &&
++             data.keys().hasAll(required) &&
++             isValidString(data.id, 1, 100) &&
++             isValidString(data.userId, 1, 100) &&
++             isValidString(data.userName, 1, 100) &&
++             isValidEmail(data.userEmail) &&
++             isValidString(data.newDeviceId, 1, 100) &&
++             isValidString(data.newDevicePublicKey, 1, 2000) &&
++             isValidString(data.newDeviceModel, 1, 100) &&
++             isValidString(data.newDevicePlatform, 1, 20) &&
++             isValidString(data.reason, 1, 500) &&
++             data.status in ['pending', 'approved', 'rejected', 'cancelled'] &&
++             isValidString(data.createdAt, 1, 50) &&
++             isValidOptionalString('currentDeviceId', data, 0, 100) &&
++             isValidOptionalString('currentDeviceModel', data, 0, 100) &&
++             isValidOptionalString('reviewedAt', data, 0, 50) &&
++             isValidOptionalString('reviewedBy', data, 0, 100) &&
++             isValidOptionalString('reviewedByName', data, 0, 100) &&
++             isValidOptionalString('rejectionReason', data, 0, 1000) &&
++             isValidOptionalString('_syncedAt', data, 0, 50);
++    }
++
++    function hasValidInvitationForProfile(userId, profileData) {
++      let token = profileData.invitationToken;
++      let invPath = /databases/$(database)/documents/staff_invitations/$(token);
++      return exists(invPath) &&
++             get(invPath).data.email == request.auth.token.email &&
++             (get(invPath).data.status == 'pending' || get(invPath).data.acceptedByUid == userId) &&
++             request.time < timestamp(get(invPath).data.expiresAt) &&
++             get(invPath).data.role == 'staff';
++    }
++
+     // ===============================================================
+     // Collection Security Rules
+     // ===============================================================
+ 
+     // 1. Users Collection
+-    match /users/{userId} {
++    
++match /users/{userId} {
+ 
+-  // Preserve existing read policy for now.
+-  allow read: if isAuthenticated();
++  // Admin can read all profiles; staff can read only their own profile
++  allow read: if isAuthenticated() && (isAdmin() || request.auth.uid == userId);
+ 
+-  // Admin creates normal profiles.
+-  // Verified staff can create ONLY their own pending profile.
+-  allow create: if
++  // Admin can create profiles.
++  // A new staff member can create ONLY their own pending profile.
++  allow create: if isValidUser(request.resource.data) &&
+     (
+-      isAdmin() &&
+-      isValidUser(request.resource.data)
+-    )
+-    ||
+-    (
+-      isAuthenticated() &&
+-      isOwner(userId) &&
+-      request.auth.token.email_verified == true &&
+-      isValidUser(request.resource.data) &&
+-
+-      request.resource.data.id == request.auth.uid &&
+-      request.resource.data.email == request.auth.token.email &&
+-      request.resource.data.role == 'staff' &&
+-      request.resource.data.isActive == false &&
+-      request.resource.data.basicSalary == 0 &&
+-      request.resource.data.monthlyTarget == 0 &&
+-
+-      request.resource.data.keys().hasOnly([
+-        'id',
+-        'name',
+-        'email',
+-        'phone',
+-        'role',
+-        'designation',
+-        'avatarUrl',
+-        'joinedDate',
+-        'basicSalary',
+-        'monthlyTarget',
+-        'isActive',
+-        'hasFaceRegistered',
+-        'faceRegistrationDate',
+-        'faceEnrollmentStatus',
+-        'createdBy',
+-        'createdAt',
+-        'passwordSetupStatus',
+-        '_syncedAt'
+-      ])
++      (
++        isAuthenticated() &&
++        isOwner(userId) &&
++        request.auth.token.email_verified == true &&
++        request.resource.data.id == request.auth.uid &&
++        request.resource.data.email == request.auth.token.email &&
++        request.resource.data.role == 'staff' &&
++        request.resource.data.isActive == false &&
++        request.resource.data.basicSalary == 0 &&
++        request.resource.data.monthlyTarget == 0 &&
++        request.resource.data.registrationStatus == 'pending' &&
++        request.resource.data.emailVerified == true &&
++        request.resource.data.faceEnrollmentStatus == 'pending_review' &&
++        request.resource.data.hasFaceRegistered == false &&
++        request.resource.data.deviceBindingStatus == 'pending_approval' &&
++        request.resource.data.keys().hasOnly([
++          'id', 'name', 'email', 'phone', 'role', 'designation', 'avatarUrl',
++          'joinedDate', 'basicSalary', 'monthlyTarget', 'isActive',
++          'registrationStatus', 'emailVerified', 'faceEnrollmentStatus',
++          'faceModelVersion', 'faceRegistrationDate', 'hasFaceRegistered',
++          'deviceId', 'deviceModel', 'devicePlatform', 'deviceRegisteredAt',
++          'deviceBindingStatus', 'devicePublicKey', 'createdAt', 'createdBy', '_syncedAt'
++        ])
++      )
++      ||
++      isAdmin()
+     );
+ 
+-  // Admin controls approval and all administrative fields.
+-  // Staff can update only basic personal details.
+-  allow update: if
++  // Admin can update profiles.
++  // Staff can update only basic personal profile information.
++  // Pending or rejected staff can update/resubmit their registration profile.
++  allow update: if isValidUser(request.resource.data) &&
+     (
+-      isAdmin() &&
+-      isValidUser(request.resource.data)
+-    )
+-    ||
+-    (
+-      isAuthenticated() &&
+-      isOwner(userId) &&
+-      isValidUser(request.resource.data) &&
+-
+-      request.resource.data.diff(resource.data)
+-        .affectedKeys()
+-        .hasOnly([
+-          'name',
+-          'phone',
+-          'avatarUrl',
+-          '_syncedAt'
++      (
++        isAuthenticated() &&
++        isOwner(userId) &&
++        ('registrationStatus' in resource.data && resource.data.registrationStatus in ['pending', 'rejected']) &&
++        request.auth.token.email_verified == true &&
++        request.resource.data.id == resource.data.id &&
++        request.resource.data.id == request.auth.uid &&
++        request.resource.data.email == resource.data.email &&
++        request.resource.data.email == request.auth.token.email &&
++        request.resource.data.role == 'staff' &&
++        request.resource.data.role == resource.data.role &&
++        request.resource.data.isActive == false &&
++        request.resource.data.basicSalary == 0 &&
++        request.resource.data.basicSalary == resource.data.basicSalary &&
++        request.resource.data.monthlyTarget == 0 &&
++        request.resource.data.monthlyTarget == resource.data.monthlyTarget &&
++        request.resource.data.registrationStatus == 'pending' &&
++        request.resource.data.emailVerified == true &&
++        request.resource.data.faceEnrollmentStatus == 'pending_review' &&
++        request.resource.data.hasFaceRegistered == false &&
++        request.resource.data.deviceBindingStatus == 'pending_approval' &&
++        request.resource.data.createdAt == resource.data.createdAt &&
++        request.resource.data.createdBy == resource.data.createdBy &&
++        (
++          resource.data.registrationStatus == 'rejected' ||
++          (
++            resource.data.registrationStatus == 'pending' &&
++            request.resource.data.deviceId == resource.data.deviceId &&
++            request.resource.data.devicePublicKey == resource.data.devicePublicKey &&
++            request.resource.data.deviceModel == resource.data.deviceModel &&
++            request.resource.data.devicePlatform == resource.data.devicePlatform &&
++            request.resource.data.deviceRegisteredAt == resource.data.deviceRegisteredAt
++          )
++        ) &&
++        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
++          'name', 'phone', 'designation', 'avatarUrl', 'joinedDate',
++          'registrationStatus', 'emailVerified', 'faceEnrollmentStatus',
++          'faceModelVersion', 'faceRegistrationDate', 'hasFaceRegistered',
++          'deviceId', 'deviceModel', 'devicePlatform', 'deviceRegisteredAt',
++          'deviceBindingStatus', 'devicePublicKey', '_syncedAt'
++        ])
++      )
++      ||
++      (
++        isOwner(userId) &&
++        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
++          'name', 'phone', 'avatarUrl', '_syncedAt'
+         ]) &&
+-
+-      request.resource.data.id == resource.data.id &&
+-      request.resource.data.role == resource.data.role &&
+-      request.resource.data.isActive == resource.data.isActive &&
+-      request.resource.data.basicSalary == resource.data.basicSalary &&
+-      request.resource.data.monthlyTarget == resource.data.monthlyTarget
++        request.resource.data.id == resource.data.id &&
++        request.resource.data.role == resource.data.role &&
++        request.resource.data.isActive == resource.data.isActive &&
++        (!('registrationStatus' in resource.data) || request.resource.data.registrationStatus == resource.data.registrationStatus) &&
++        request.resource.data.basicSalary == resource.data.basicSalary &&
++        request.resource.data.monthlyTarget == resource.data.monthlyTarget &&
++        (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt) &&
++        (!('createdBy' in resource.data) || request.resource.data.createdBy == resource.data.createdBy)
++      )
++      ||
++      isAdmin()
+     );
+ 
++  // Only Admin can delete profiles.
+   allow delete: if isAdmin();
+ }
+ 
++
++    // 2. Attendance Collection
++    match /attendance/{attendanceId} {
++      // Individual staff member can only read their own punch records; Admin can read all
++      allow read: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
++
++      // Create (Punch In)
++      allow create: if (isAdmin() && isValidAttendance(request.resource.data)) || (
++        isAuthenticated() &&
++        request.resource.data.userId == request.auth.uid &&
++        attendanceId == 'att_' + request.auth.uid + '_' + request.resource.data.date &&
++        getUserData().isActive == true &&
++        getUserData().deviceBindingStatus == 'approved' &&
++        ('deviceId' in request.resource.data && request.resource.data.deviceId == getUserData().deviceId) &&
++        request.resource.data.userName == getUserData().name &&
++        request.resource.data.userRole == getUserData().role &&
++        request.resource.data.status in ['present', 'late'] &&
++        request.resource.data.totalHours == 0 &&
++        request.resource.data.isEarlyExit == false &&
++        (!('punchOutTime' in request.resource.data) || request.resource.data.punchOutTime == null || request.resource.data.punchOutTime == '' || request.resource.data.punchOutTime == '--:--') &&
++        request.resource.data.punchInTime is string && request.resource.data.punchInTime.size() > 0 &&
++        isValidAttendance(request.resource.data)
++      );
++
++      // Update (Punch Out by Staff or Admin correction)
++      allow update: if (
++        isAuthenticated() &&
++        resource.data.userId == request.auth.uid &&
++        getUserData().isActive == true &&
++        getUserData().deviceBindingStatus == 'approved' &&
++        request.resource.data.deviceId == getUserData().deviceId &&
++        // Previous doc must not already be punched out
++        (!('punchOutTime' in resource.data) || resource.data.punchOutTime == null || resource.data.punchOutTime == '' || resource.data.punchOutTime == '--:--') &&
++        // New doc must have valid punchOutTime
++        ('punchOutTime' in request.resource.data && request.resource.data.punchOutTime != null && request.resource.data.punchOutTime != '' && request.resource.data.punchOutTime != '--:--') &&
++        // Staff punch out totalHours bounds
++        (!('totalHours' in request.resource.data) || (request.resource.data.totalHours is number && request.resource.data.totalHours >= 0 && request.resource.data.totalHours <= 16)) &&
++        // Strict affected keys for punch-out
++        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
++          'punchOutTime', 'punchOutCoords', 'status', 'totalHours', 'isEarlyExit', 'notes', '_syncedAt', 'timestamp'
++        ]) &&
++        // Immutable historical & punch-in fields
++        request.resource.data.id == resource.data.id &&
++        request.resource.data.userId == resource.data.userId &&
++        request.resource.data.userName == resource.data.userName &&
++        request.resource.data.userRole == resource.data.userRole &&
++        request.resource.data.date == resource.data.date &&
++        (!('punchInTime' in resource.data) || request.resource.data.punchInTime == resource.data.punchInTime) &&
++        ((!('punchInCoords' in resource.data) && !('punchInCoords' in request.resource.data)) || request.resource.data.punchInCoords == resource.data.punchInCoords) &&
++        request.resource.data.deviceId == resource.data.deviceId &&
++        request.resource.data.isLate == resource.data.isLate &&
++        isValidAttendance(request.resource.data)
++      ) || (isAdmin() && isValidAttendance(request.resource.data));
++
++      // Attendance records are sensitive official audit trails; only Admin can adjust or delete
++      allow delete: if isAdmin();
++    }
++
++    // 2b. Attendance & Biometric Audit Logs (Immutable Audit Trail)
++    match /attendance_audit_logs/{logId} {
++      allow read: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
++      allow create: if isAuthenticated() && isValidAttendanceAuditLog(request.resource.data) && (
++        isAdmin() || (
++          request.resource.data.userId == request.auth.uid &&
++          request.resource.data.action in ['punch_in', 'punch_out', 'verification_failed', 'enrollment_submitted'] &&
++          !('adminId' in request.resource.data) &&
++          !('adminName' in request.resource.data)
++        )
++      );
++      allow update, delete: if false; // Append-only immutable audit trail protected from client modification
++    }
++
++    // 3. Customer Leads Collection
++    match /leads/{leadId} {
++      allow read: if isAuthenticated() && (
++        isAdmin() ||
++        resource.data.createdBy == request.auth.uid ||
++        ('assignedTo' in resource.data && resource.data.assignedTo == request.auth.uid)
++      );
++
++      // Staff can create leads (must set createdBy to their UID, or admin)
++      allow create: if isAuthenticated() &&
++                    (isAdmin() || request.resource.data.createdBy == request.auth.uid) &&
++                    isValidLead(request.resource.data);
++
++      allow update: if isAuthenticated() &&
++                    (
++                      isAdmin() ||
++                      resource.data.createdBy == request.auth.uid ||
++                      ('assignedTo' in resource.data && resource.data.assignedTo == request.auth.uid)
++                    ) &&
++                    isValidLead(request.resource.data) &&
++                    request.resource.data.id == resource.data.id &&
++                    request.resource.data.createdBy == resource.data.createdBy &&
++                    request.resource.data.createdAt == resource.data.createdAt;
++
++      // Only Admin can delete customer leads
++      allow delete: if isAdmin();
++    }
++
+     // 4. Mobile Prices Collection
+     match /mobile_prices/{priceId} {
+       allow read: if isAuthenticated();
+@@ -617,26 +923,73 @@
+ 
+     // 5. Second-Hand Purchases Collection
+     match /second_hand_purchases/{purchaseId} {
+-      allow read: if isAuthenticated();
++      // Admin can read all purchases; staff can read purchases they recorded or in-stock inventory for resale
++      allow read: if isAuthenticated() && (
++        isAdmin() ||
++        resource.data.purchasedByStaffId == request.auth.uid ||
++        resource.data.status == 'in_stock'
++      );
+ 
+-      // Staff can record second-hand purchase with customer KYC & signature
+-      allow create: if isAuthenticated() && isValidSecondHandPurchase(request.resource.data);
++      // Staff can record second-hand purchase (inventory & resale only)
++      allow create: if isAuthenticated() && isValidSecondHandPurchase(request.resource.data) && (
++        isAdmin() || request.resource.data.purchasedByStaffId == request.auth.uid
++      );
+ 
+       // Legal & financial buyback records can only be updated/deleted by Admin
+       allow update: if isAdmin() && isValidSecondHandPurchase(request.resource.data);
+       allow delete: if isAdmin();
++
++      // Sensitive KYC Subcollection (raw customer Aadhaar numbers and identity proofs)
++      // Only store administrator can read raw KYC.
++      // Staff can only create KYC if they recorded the parent purchase, and parent purchase exists.
++      match /kyc_sensitive/{kycId} {
++        allow read: if isAdmin();
++        allow create: if isAuthenticated() && isValidSecondHandKyc(request.resource.data) && (
++          (
++            request.resource.data.recordedByStaffId == request.auth.uid &&
++            request.resource.data.purchaseId == purchaseId &&
++            exists(/databases/$(database)/documents/second_hand_purchases/$(purchaseId)) &&
++            get(/databases/$(database)/documents/second_hand_purchases/$(purchaseId)).data.purchasedByStaffId == request.auth.uid
++          ) ||
++          isAdmin()
++        );
++        allow update, delete: if isAdmin();
++      }
+     }
+ 
+     // 6. Second-Hand Sales Collection
+     match /second_hand_sales/{saleId} {
+-      allow read: if isAuthenticated();
++      // Staff can read ONLY their own sales; Admin can read all sales
++      allow read: if isAuthenticated() && (
++        isAdmin() ||
++        resource.data.soldByStaffId == request.auth.uid
++      );
+ 
+       // Staff can record sales of refurbished / 2nd hand phones with invoice
+-      allow create: if isAuthenticated() && isValidSecondHandSale(request.resource.data);
++      allow create: if isAuthenticated() && isValidSecondHandSale(request.resource.data) && (
++        isAdmin() || request.resource.data.soldByStaffId == request.auth.uid
++      );
+ 
+       // Only Admin can modify/cancel finalized sales transactions
+       allow update: if isAdmin() && isValidSecondHandSale(request.resource.data);
+       allow delete: if isAdmin();
++
++      // Sensitive Buyer KYC Subcollection (buyer Aadhaar & photos)
++      // Strictly Admin-only for read.
++      // Staff can create ONLY if parent sale exists and was sold by this authenticated staff member.
++      match /kyc_sensitive/{kycId} {
++        allow read: if isAdmin();
++        allow create: if isAuthenticated() && isValidSecondHandSaleKyc(request.resource.data) && (
++          (
++            request.resource.data.recordedByStaffId == request.auth.uid &&
++            request.resource.data.saleId == saleId &&
++            exists(/databases/$(database)/documents/second_hand_sales/$(saleId)) &&
++            get(/databases/$(database)/documents/second_hand_sales/$(saleId)).data.soldByStaffId == request.auth.uid
++          ) ||
++          isAdmin()
++        );
++        allow update, delete: if isAdmin();
++      }
+     }
+ 
+     // 7. Sales Targets Collection
+@@ -651,11 +1004,10 @@
+ 
+     // 8. Salary Slips Collection
+     match /salary_slips/{slipId} {
+-      // Individual staff member can only read their own slip; Admin can read all
++      // Individual staff member can only read their own slip via canonical staffId; Admin can read all
+       allow read: if isAuthenticated() && (
+         isAdmin() ||
+-        resource.data.staffId == request.auth.uid ||
+-        ('userId' in resource.data && resource.data.userId == request.auth.uid)
++        resource.data.staffId == request.auth.uid
+       );
+ 
+       // Financial payout calculation and issuance reserved strictly for Admin
+@@ -666,17 +1018,35 @@
+ 
+     // 9. Notifications Collection
+     match /notifications/{notificationId} {
+-      allow read: if isAuthenticated();
++      allow read: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
+ 
+-      // System or authenticated users can dispatch notifications
+-      allow create: if isAuthenticated() && isValidNotification(request.resource.data);
++      // System or Admin can dispatch all notifications;
++      // Staff can only dispatch legitimate client workflow notifications (lead, purchase, sale, task, follow_up) addressed to themselves.
++      // Fake attendance, announcement, payroll, and system notifications are strictly forbidden for staff.
++      allow create: if isAuthenticated() && isValidNotification(request.resource.data) && (
++        isAdmin() || (
++          request.resource.data.userId == request.auth.uid &&
++          request.resource.data.type in ['lead', 'purchase', 'sale', 'task', 'follow_up']
++        )
++      );
+ 
+       // Users can mark notifications as read without altering notification origin/body
+       allow update: if isAuthenticated() &&
+                     isValidNotification(request.resource.data) &&
+-                    request.resource.data.id == resource.data.id &&
+-                    request.resource.data.type == resource.data.type &&
+-                    request.resource.data.timestamp == resource.data.timestamp;
++                    (
++                      isAdmin() ||
++                      (
++                        resource.data.userId == request.auth.uid &&
++                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', '_syncedAt']) &&
++                        request.resource.data.id == resource.data.id &&
++                        request.resource.data.userId == resource.data.userId &&
++                        request.resource.data.title == resource.data.title &&
++                        request.resource.data.body == resource.data.body &&
++                        request.resource.data.type == resource.data.type &&
++                        request.resource.data.timestamp == resource.data.timestamp &&
++                        (!('relatedId' in resource.data) || request.resource.data.relatedId == resource.data.relatedId)
++                      )
++                    );
+ 
+       // Only Admin can prune notifications
+       allow delete: if isAdmin();
+@@ -695,12 +1065,109 @@
+     match /_connection_test/{testDocId} {
+       allow read: if isAuthenticated();
+       allow create, update: if isAuthenticated() && isValidConnectionTest(request.resource.data);
+-      allow delete: if isAuthenticated();
++      allow delete: if isAdmin();
+     }
+ 
+-    // Default deny all other paths
+-    match /{document=**} {
+-      allow read, write: if false;
++    // 12. Staff Invitations Collection (Spark-compliant token provisioning)
++    match /staff_invitations/{invitationId} {
++      // Disallow public listing/enumeration. Only Admin can list/query all invitations.
++      allow list: if isAdmin();
++
++      // Non-admins can only read a single document if they hold the exact unguessable token
++      // and only if the invitation is currently pending and unexpired. Admin can read any.
++      allow get: if isAdmin() || (
++        resource.data.status == 'pending' &&
++        request.time < timestamp(resource.data.expiresAt)
++      );
++
++      // Only Admin can issue staff invitations
++      allow create: if isAdmin() && isValidStaffInvitation(request.resource.data);
++
++      // Admin can manage/revoke; invited staff can accept token upon account creation if valid and unexpired
++      // Uses diff().affectedKeys() to restrict staff modifications strictly to status, acceptedAt, and acceptedByUid
++      allow update: if isAdmin() || (
++        isAuthenticated() &&
++        resource.data.status == 'pending' &&
++        resource.data.role == 'staff' &&
++        request.time < timestamp(resource.data.expiresAt) &&
++        request.resource.data.status == 'accepted' &&
++        request.resource.data.acceptedByUid == request.auth.uid &&
++        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt', 'acceptedByUid'])
++      );
++
++      // Only Admin can remove invitations
++      allow delete: if isAdmin();
++
++      // Admin-only compensation terms subcollection
++      match /compensation/{docId} {
++        allow read, write: if isAdmin();
++      }
+     }
++
++    // 13. Device Change Requests Collection (Spark-compliant replacement workflow)
++    match /device_change_requests/{requestId} {
++      // Staff can read only their own requests; Admin can read all
++      allow read: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
++
++      // Staff creation or Admin creation
++      allow create: if isAuthenticated() &&
++        isValidDeviceChangeRequest(request.resource.data) && (
++          isAdmin() || (
++            request.resource.data.userId == request.auth.uid &&
++            request.resource.data.status == 'pending' &&
++            request.resource.data.userName == getUserData().name &&
++            request.resource.data.userEmail == getUserData().email &&
++            (
++              !('deviceId' in getUserData()) ||
++              getUserData().deviceId == null ||
++              !('currentDeviceId' in request.resource.data) ||
++              request.resource.data.currentDeviceId == getUserData().deviceId
++            )
++          )
++        );
++
++      // Staff can cancel their own pending requests; Admin can review (approve/reject) pending requests
++      allow update: if isAuthenticated() &&
++        isValidDeviceChangeRequest(request.resource.data) && (
++          // Staff cancellation
++          (
++            resource.data.userId == request.auth.uid &&
++            resource.data.status == 'pending' &&
++            request.resource.data.status == 'cancelled' &&
++            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', '_syncedAt'])
++          ) ||
++          // Admin review (approval or rejection)
++          (
++            isAdmin() &&
++            resource.data.status == 'pending' &&
++            request.resource.data.status in ['approved', 'rejected'] &&
++            request.resource.data.reviewedBy == request.auth.uid &&
++            request.resource.data.reviewedAt is string &&
++            request.resource.data.reviewedAt.size() > 0 &&
++            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
++              'status', 'reviewedAt', 'reviewedBy', 'reviewedByName', 'rejectionReason', '_syncedAt'
++            ]) &&
++            (
++              request.resource.data.status != 'rejected' ||
++              ('rejectionReason' in request.resource.data && request.resource.data.rejectionReason.size() > 0)
++            )
++          )
++        );
++
++      // Only Admin can delete requests
++      allow delete: if isAdmin();
++    }
++
++    // 14. Administrative Security Audit Logs Collection
++    match /audit_logs/{logId} {
++      // Only Admin can view security audit logs
++      allow read: if isAdmin();
++
++      // Only verified Admin can create administrative audit logs matching their own auth UID
++      allow create: if isAdmin() && isValidAdminAuditLog(request.resource.data);
++
++      // Security audit logs are immutable and protected from tampering
++    }
+   }
+ }
++

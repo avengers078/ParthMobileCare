@@ -8,6 +8,7 @@ import {
   GestureResponderEvent,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import { PenLine, CheckCircle2 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 
 interface DigitalSignaturePadProps {
@@ -169,8 +170,9 @@ export const DigitalSignaturePad: React.FC<DigitalSignaturePadProps> = ({
 
         {!hasSigned && !currentPath && (
           <View style={styles.placeholderContainer} pointerEvents="none">
+            <PenLine size={16} color={colors.textMuted} style={{ marginRight: 6 }} />
             <Text style={[styles.placeholderText, { color: colors.textMuted }]}>
-              ✍️ Touch and drag to capture digital signature
+              Touch and drag to capture digital signature
             </Text>
           </View>
         )}
@@ -200,9 +202,10 @@ export const DigitalSignaturePad: React.FC<DigitalSignaturePadProps> = ({
         </TouchableOpacity>
 
         {hasSigned && (
-          <View style={styles.statusBadge}>
+          <View style={[styles.statusBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+            <CheckCircle2 size={13} color={colors.accent} />
             <Text style={{ color: colors.accent, fontWeight: '700', fontSize: 12 }}>
-              ✓ Signature Captured
+              Signature Captured
             </Text>
           </View>
         )}
@@ -241,6 +244,7 @@ const styles = StyleSheet.create({
   },
   placeholderContainer: {
     ...StyleSheet.absoluteFill,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },

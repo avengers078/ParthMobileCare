@@ -4,13 +4,20 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Alert,
-  Switch,
   Share,
+  TouchableOpacity,
+  Keyboard,
+  Platform,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAlert } from '../context/AlertContext';
 import { useShopConfig } from '../context/ShopConfigContext';
+import { Phone, Mail, Camera } from 'lucide-react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
+import { CloudinaryService } from '../services/cloudinaryService';
 import {
   ScreenContainer,
   AppHeader,
@@ -18,35 +25,193 @@ import {
   StatusBadge,
   Button,
   PrimaryButton,
-  Input,
   FilterChip,
   SectionHeader,
   AppIcon,
   ModalCard,
 } from '../components';
-import { AttendanceService } from '../services/attendanceService';
+import { DeviceBindingModal } from '../components/DeviceBindingModal';
 import { StaffPerformanceService } from '../services/staffPerformanceService';
 import { PdfService } from '../services/pdfService';
-import { SalarySlip, ShopConfig, SalesTarget } from '../types';
+import { SalarySlip, SalesTarget } from '../types';
 import { RADIUS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 import { formatCurrency, getTodayDateString } from '../utils/format';
 
-export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
-  const { currentUser, role, isAdmin, logout } = useAuth();
+interface InfoRowProps {
+  icon: any;
+  label: string;
+  value?: string | null;
+  colors: any;
+  isDark: boolean;
+  isLast?: boolean;
+  onPress?: () => void;
+}
+
+const InfoRow: React.FC<InfoRowProps> = ({ icon, label, value, colors, isDark, isLast = false, onPress }) => {
+  if (!value) return null;
+  const content = (
+    <View
+      style={[
+        styles.infoRow,
+        !isLast && {
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.borderLight,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.infoIconWrap,
+          { backgroundColor: isDark ? 'rgba(25, 77, 156, 0.2)' : 'rgba(25, 77, 156, 0.08)' },
+        ]}
+      >
+        <AppIcon name={icon} size={16} color={colors.primary} />
+      </View>
+      <View style={styles.infoContent}>
+        <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{label}</Text>
+        <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={2}>
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+
+  return content;
+};
+
+interface ActionRowProps {
+  icon: any;
+  title: string;
+  subtitle?: string;
+  onPress: () => void;
+  colors: any;
+  isDark: boolean;
+  isLast?: boolean;
+}
+
+const ActionRow: React.FC<ActionRowProps> = ({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  colors,
+  isDark,
+  isLast = false,
+}) => {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      style={[
+        styles.actionRow,
+        !isLast && {
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.borderLight,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.infoIconWrap,
+          { backgroundColor: isDark ? 'rgba(25, 77, 156, 0.2)' : 'rgba(25, 77, 156, 0.08)' },
+        ]}
+      >
+        <AppIcon name={icon} size={16} color={colors.primary} />
+      </View>
+      <View style={styles.actionContent}>
+        <Text style={[styles.actionTitle, { color: colors.text }]}>{title}</Text>
+        {subtitle && (
+          <Text style={[styles.actionSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+        )}
+      </View>
+      <AppIcon name="chevron-right" size={16} color={colors.textMuted} />
+    </TouchableOpacity>
+  );
+};
+
+export const ProfileScreen: React.FC<{ navigation?: any }> = () => {
+  const { currentUser, role, logout, sendPasswordReset, updateUserProfile } = useAuth();
   const { colors, isDark, toggleTheme } = useTheme();
-  const { config, updateConfig } = useShopConfig();
+  const { showSuccess, showError, showConfirm } = useAlert();
+  const { config } = useShopConfig();
 
-  // Active section tab: 'account' | 'performance' | 'shop_config'
-  const [activeSection, setActiveSection] = useState<'account' | 'performance' | 'shop_config'>('account');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  // Shop config state
-  const [latitude, setLatitude] = useState(config.latitude.toString());
-  const [longitude, setLongitude] = useState(config.longitude.toString());
-  const [radius, setRadius] = useState(config.allowedRadiusMeters.toString());
-  const [openingTime, setOpeningTime] = useState(config.openingTime);
-  const [closingTime, setClosingTime] = useState(config.closingTime);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDetectingGps, setIsDetectingGps] = useState(false);
+  const handlePickAvatar = async () => {
+    try {
+      const res = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 0.8,
+        maxWidth: 800,
+        maxHeight: 800,
+      });
+
+      if (res.didCancel || !res.assets || res.assets.length === 0 || !res.assets[0].uri) {
+        return;
+      }
+
+      const file = res.assets[0];
+      const check = CloudinaryService.validateImageMeta(file.type || 'image/jpeg', file.fileSize);
+      if (!check.valid) {
+        showError('Invalid Image', check.error || 'Please choose an image under 5 MB.');
+        return;
+      }
+
+      if (!CloudinaryService.isConfigured()) {
+        showError(
+          'Cloud Storage Disconnected',
+          'Profile avatar cloud upload is temporarily paused until a new storage account is connected.'
+        );
+        return;
+      }
+
+      setIsUploadingAvatar(true);
+      const uploadRes = await CloudinaryService.uploadImage(file.uri, {
+        folder: 'avatars',
+        tags: ['staff_avatar', currentUser?.id || 'staff'],
+      });
+
+      if (uploadRes.success && uploadRes.secureUrl) {
+        await updateUserProfile({ avatarUrl: uploadRes.secureUrl });
+        showSuccess('Avatar Updated', 'Your profile picture has been updated.');
+      } else {
+        showError('Upload Failed', uploadRes.error || 'Could not upload avatar.');
+      }
+    } catch (err: any) {
+      showError('Error', err?.message || 'Failed to select image.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  // Active section tab: 'account' | 'performance' (Staff-only app)
+  const [activeSection, setActiveSection] = useState<'account' | 'performance'>('account');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Performance & Month-wise Salary slip
   const availableMonths = useMemo(() => {
@@ -71,6 +236,7 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
   const [salarySlip, setSalarySlip] = useState<SalarySlip | null>(null);
   const [salesTarget, setSalesTarget] = useState<SalesTarget | null>(null);
   const [salaryModalVisible, setSalaryModalVisible] = useState(false);
+  const [deviceModalVisible, setDeviceModalVisible] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -85,65 +251,14 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
         .then(setSalesTarget)
         .catch(err => console.warn('Error loading target:', err));
     }
-    setLatitude(config.latitude.toString());
-    setLongitude(config.longitude.toString());
-    setRadius(config.allowedRadiusMeters.toString());
-    setOpeningTime(config.openingTime);
-    setClosingTime(config.closingTime);
-  }, [config, currentUser, selectedMonthKey]);
-
-  const handleSetCurrentGpsAsShop = async () => {
-    setIsDetectingGps(true);
-    try {
-      const pos = await AttendanceService.getCurrentPosition();
-      setLatitude(pos.latitude.toFixed(6));
-      setLongitude(pos.longitude.toFixed(6));
-      Alert.alert(
-        'GPS Captured',
-        `Current coordinates (${pos.latitude.toFixed(6)}, ${pos.longitude.toFixed(6)}) set as Shop Center!`
-      );
-    } catch (e: any) {
-      Alert.alert('GPS Error', e.message || 'Could not fetch current coordinates.');
-    } finally {
-      setIsDetectingGps(false);
-    }
-  };
-
-  const handleSaveShopConfig = async () => {
-    const lat = parseFloat(latitude);
-    const lon = parseFloat(longitude);
-    const rad = parseFloat(radius);
-
-    if (isNaN(lat) || isNaN(lon) || isNaN(rad)) {
-      Alert.alert('Validation Error', 'Please enter valid GPS coordinates and radius.');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const newConfig: ShopConfig = {
-        ...config,
-        latitude: lat,
-        longitude: lon,
-        allowedRadiusMeters: rad,
-        openingTime: openingTime.trim(),
-        closingTime: closingTime.trim(),
-      };
-      await updateConfig(newConfig);
-      Alert.alert('Settings Saved', 'Shop Geo-fencing & timing rules updated successfully!');
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  }, [currentUser, selectedMonthKey]);
 
   const handleDownloadPdfSalarySlip = async () => {
     if (!salarySlip) return;
     try {
       await PdfService.printOrSavePdf(salarySlip, config);
     } catch (e: any) {
-      Alert.alert('PDF Error', e.message || 'Could not generate PDF.');
+      showError('PDF Error', e.message || 'Could not generate PDF.');
     }
   };
 
@@ -153,34 +268,135 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
     try {
       await Share.share({ title: `Salary Slip - ${salarySlip.staffName}`, message });
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      showError('Error', e.message);
     }
   };
 
   return (
     <ScreenContainer edges={['top', 'left', 'right']}>
-      <AppHeader title="My Profile" subtitle="Account & Store Settings" />
+      <AppHeader
+        title="My Profile"
+        subtitle="Staff account & performance targets"
+        rightAction={
+          <TouchableOpacity
+            onPress={toggleTheme}
+            style={[
+              styles.headerThemeBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                borderColor: colors.border,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            accessibilityHint="Toggles between light and dark mode"
+            activeOpacity={0.7}
+          >
+            <AppIcon
+              name={isDark ? 'sun' : 'moon'}
+              size={18}
+              color={isDark ? '#FBBF24' : colors.primary}
+            />
+          </TouchableOpacity>
+        }
+      />
 
       {/* Hero Profile Banner */}
-      <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }, SHADOWS.card]}>
-        <View style={[styles.avatarBig, { backgroundColor: colors.primary }]}>
-          <Text style={styles.avatarBigText}>
-            {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-          </Text>
-        </View>
-        <View style={{ flex: 1, marginLeft: SPACING.md }}>
-          <Text style={[styles.profileName, { color: colors.text }]}>
-            {currentUser?.name}
-          </Text>
-          <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>
-            {currentUser?.designation} • {currentUser?.email}
-          </Text>
-          <View style={styles.roleRow}>
-            <StatusBadge label={role.toUpperCase()} variant={role === 'admin' ? 'danger' : 'primary'} size="small" />
-            <Text style={[styles.phoneText, { color: colors.textMuted }]}>
-              +91 {currentUser?.phone}
+      <View
+        style={[
+          styles.heroCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: isDark ? colors.border : '#E2E8F0',
+          },
+          SHADOWS.card,
+        ]}
+      >
+        {/* Top Row: Avatar on left, Name/Designation in middle, Staff badge at top-right */}
+        <View style={styles.heroTopRow}>
+          <View style={{ position: 'relative' }}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={handlePickAvatar}
+              disabled={isUploadingAvatar}
+              style={[
+                styles.avatar,
+                {
+                  backgroundColor: colors.primary,
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : '#E2E8F0',
+                  overflow: 'hidden',
+                },
+              ]}
+            >
+              {isUploadingAvatar ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : currentUser?.avatarUrl ? (
+                <Image
+                  source={{ uri: CloudinaryService.getDeviceThumbnailUrl(currentUser.avatarUrl) }}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'S'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handlePickAvatar}
+              disabled={isUploadingAvatar}
+              activeOpacity={0.7}
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                right: 0,
+                backgroundColor: colors.primary,
+                borderRadius: 11,
+                width: 22,
+                height: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 2,
+                borderColor: colors.card,
+              }}
+            >
+              <Camera size={11} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.heroIdentityCol}>
+            <View style={styles.heroNameBadgeRow}>
+              <Text style={[styles.profileName, { color: colors.text }]} numberOfLines={1}>
+                {currentUser?.name || 'Staff Member'}
+              </Text>
+              <StatusBadge
+                label="Staff"
+                variant="neutral"
+                size="small"
+              />
+            </View>
+            <Text style={[styles.profileDesignation, { color: colors.textSecondary }]} numberOfLines={1}>
+              {currentUser?.designation || 'Sales & Service Specialist'}
             </Text>
           </View>
+        </View>
+
+        {/* Bottom Row: Phone number and Email address */}
+        <View style={[styles.heroContactRow, { borderTopColor: isDark ? colors.border : '#F1F5F9' }]}>
+          <View style={styles.heroContactItem}>
+            <Phone size={14} color={colors.primary} />
+            <Text style={[styles.heroContactText, { color: colors.textSecondary }]}>
+              +91 {currentUser?.phone || '—'}
+            </Text>
+          </View>
+          {currentUser?.email ? (
+            <View style={styles.heroContactItem}>
+              <Mail size={14} color={colors.primary} />
+              <Text style={[styles.heroContactText, { color: colors.textSecondary }]} numberOfLines={1}>
+                {currentUser.email}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -190,7 +406,6 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
           {[
             { key: 'account', label: 'Account', icon: 'user', iconColor: colors.primary },
             { key: 'performance', label: 'Targets & Salary', icon: 'analytics', iconColor: colors.warning },
-            { key: 'shop_config', label: 'Shop Geo-Fence', icon: 'location', iconColor: colors.success },
           ].map(tab => {
             const isActive = activeSection === tab.key;
             return (
@@ -206,71 +421,210 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          keyboardHeight > 0 && { paddingBottom: keyboardHeight + SPACING.xxl + 32 },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* --- 1. Account Settings --- */}
         {activeSection === 'account' && (
           <>
+            {/* Account Information Card */}
             <AppCard>
-              <View style={styles.settingRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.settingTitle, { color: colors.text }]}>
-                    Dark Theme
-                  </Text>
-                  <Text style={[styles.settingSub, { color: colors.textSecondary }]}>
-                    {isDark ? 'Dark SaaS mode active' : 'Clean light mode active'}
-                  </Text>
-                </View>
-                <Switch
-                  value={isDark}
-                  onValueChange={toggleTheme}
-                  trackColor={{ false: '#CBD5E1', true: colors.primary }}
+              <SectionHeader
+                title="Account Information"
+                subtitle="Your staff profile"
+                style={{ marginTop: 0 }}
+              />
+              <View style={styles.cardContent}>
+                <InfoRow
+                  icon="user"
+                  label="Full Name"
+                  value={currentUser?.name}
+                  colors={colors}
+                  isDark={isDark}
+                />
+                <InfoRow
+                  icon="phone"
+                  label="Mobile Number"
+                  value={currentUser?.phone ? `+91 ${currentUser.phone}` : null}
+                  colors={colors}
+                  isDark={isDark}
+                />
+                <InfoRow
+                  icon="message"
+                  label="Email Address"
+                  value={currentUser?.email}
+                  colors={colors}
+                  isDark={isDark}
+                />
+                <InfoRow
+                  icon="tag"
+                  label="Role & Designation"
+                  value={`Staff • ${currentUser?.designation || 'Sales & Support'}`}
+                  colors={colors}
+                  isDark={isDark}
+                />
+                {currentUser?.joinedDate ? (
+                  <InfoRow
+                    icon="calendar"
+                    label="Joined Date"
+                    value={currentUser.joinedDate}
+                    colors={colors}
+                    isDark={isDark}
+                  />
+                ) : null}
+                {currentUser?.hasFaceRegistered !== undefined ? (
+                  <InfoRow
+                    icon="check"
+                    label="Biometric Verification"
+                    value={currentUser.hasFaceRegistered ? 'Enrolled & Verified' : 'Face Not Enrolled'}
+                    colors={colors}
+                    isDark={isDark}
+                  />
+                ) : null}
+                <InfoRow
+                  icon="phone"
+                  label="Linked Phone"
+                  value={
+                    currentUser?.deviceBindingStatus === 'approved'
+                      ? `Approved (${currentUser.deviceModel || 'Phone'})`
+                      : currentUser?.deviceBindingStatus === 'pending_approval'
+                      ? 'Pending Admin Approval'
+                      : currentUser?.deviceBindingStatus === 'rejected'
+                      ? 'Registration Rejected'
+                      : 'Device Not Bound'
+                  }
+                  colors={colors}
+                  isDark={isDark}
+                  onPress={() => setDeviceModalVisible(true)}
+                  isLast
                 />
               </View>
             </AppCard>
 
+            {/* Store Information (Read Only) */}
             <AppCard>
-              <SectionHeader title="Store Information" style={{ marginTop: 0 }} />
-              <View style={styles.infoRowContainer}>
-                <Text style={[styles.infoRowText, { color: colors.textSecondary }]}>
-                  Store Name: <Text style={{ color: colors.text, fontWeight: '700' }}>{config.shopName}</Text>
-                </Text>
-                <Text style={[styles.infoRowText, { color: colors.textSecondary }]}>
-                  Address: <Text style={{ color: colors.text, fontWeight: '600' }}>{config.shopAddress}</Text>
-                </Text>
-                <Text style={[styles.infoRowText, { color: colors.textSecondary }]}>
-                  GST Number: <Text style={{ color: colors.text, fontWeight: '600' }}>{config.gstNumber}</Text>
-                </Text>
+              <SectionHeader
+                title="Store Details"
+                subtitle="Shop address & hours"
+                style={{ marginTop: 0 }}
+              />
+              <View style={styles.cardContent}>
+                <InfoRow
+                  icon="home"
+                  label="Shop Name"
+                  value={config.shopName}
+                  colors={colors}
+                  isDark={isDark}
+                />
+                <InfoRow
+                  icon="location"
+                  label="Address"
+                  value={config.shopAddress}
+                  colors={colors}
+                  isDark={isDark}
+                />
+                <InfoRow
+                  icon="tag"
+                  label="GST Number"
+                  value={config.gstNumber}
+                  colors={colors}
+                  isDark={isDark}
+                />
+                <InfoRow
+                  icon="clock"
+                  label="Operating Hours"
+                  value={`${config.openingTime} – ${config.closingTime}`}
+                  colors={colors}
+                  isDark={isDark}
+                  isLast
+                />
               </View>
             </AppCard>
 
-            {(isAdmin || role === 'manager') && (
-              <AppCard>
-                <SectionHeader title="Team Administration" style={{ marginTop: 0 }} />
-                <Text style={[styles.settingSub, { color: colors.textSecondary, marginBottom: SPACING.md }]}>
-                  Manage staff members, roles, basic salaries, and monthly sales targets.
-                </Text>
-                <Button
-                  title="Manage Staff & Sales Targets"
-                  onPress={() => navigation?.navigate('StaffManagement')}
-                  variant="secondary"
-                  size="large"
+            {/* Account Actions */}
+            <AppCard>
+              <SectionHeader
+                title="Account Actions"
+                subtitle="Security & Session Management"
+                style={{ marginTop: 0 }}
+              />
+              <View style={styles.cardContent}>
+                <ActionRow
+                  icon="settings"
+                  title="Reset Password"
+                  subtitle={`Send reset link to ${currentUser?.email || 'registered email'}`}
+                  onPress={() => {
+                    showConfirm({
+                      title: 'Reset Password',
+                      message: `Send a password reset email to ${currentUser?.email}?`,
+                      confirmText: 'Send Link',
+                      cancelText: 'Cancel',
+                      onConfirm: async () => {
+                        try {
+                          if (currentUser?.email) {
+                            await sendPasswordReset(currentUser.email);
+                            showSuccess(
+                              'Email Sent',
+                              `Password reset link has been sent to ${currentUser.email}. Please check your inbox.`
+                            );
+                          }
+                        } catch (e: any) {
+                          showError('Error', e);
+                        }
+                      },
+                    });
+                  }}
+                  colors={colors}
+                  isDark={isDark}
+                  isLast
                 />
-              </AppCard>
-            )}
+              </View>
+            </AppCard>
 
-            <Button
-              title="Sign Out of Account"
-              icon={<AppIcon name="upload" size={16} color="#FFFFFF" />}
+            {/* Logout Card */}
+            <TouchableOpacity
+              activeOpacity={0.7}
               onPress={() => {
-                Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Sign Out', style: 'destructive', onPress: logout },
-                ]);
+                showConfirm({
+                  title: 'Sign Out',
+                  message: 'Are you sure you want to sign out of your account?',
+                  confirmText: 'Sign Out',
+                  cancelText: 'Cancel',
+                  destructive: true,
+                  onConfirm: logout,
+                });
               }}
-              variant="danger"
-              size="large"
-              style={{ marginTop: SPACING.md }}
-            />
+              accessibilityRole="button"
+              accessibilityLabel="Sign Out"
+              style={[
+                styles.logoutCard,
+                {
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2',
+                  borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FECACA',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.infoIconWrap,
+                  { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2' },
+                ]}
+              >
+                <AppIcon name="upload" size={16} color="#DC2626" />
+              </View>
+              <View style={styles.actionContent}>
+                <Text style={styles.logoutTitle}>Sign Out</Text>
+                <Text style={[styles.logoutSub, { color: isDark ? '#FCA5A5' : '#B91C1C' }]}>
+                  Securely end your current session
+                </Text>
+              </View>
+              <AppIcon name="chevron-right" size={16} color="#DC2626" />
+            </TouchableOpacity>
           </>
         )}
 
@@ -319,21 +673,37 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
 
                   <View style={styles.targetGrid}>
                     <View style={styles.targetCol}>
-                      <Text style={[styles.targetLabel, { color: colors.textMuted }]}>TARGET</Text>
-                      <Text style={[styles.targetVal, { color: colors.text }]}>
+                      <Text style={[styles.targetLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                        TARGET
+                      </Text>
+                      <Text
+                        style={[styles.targetVal, { color: colors.text }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
+                      >
                         {formatCurrency(salesTarget.targetAmount)}
                       </Text>
                     </View>
 
                     <View style={styles.targetCol}>
-                      <Text style={[styles.targetLabel, { color: colors.textMuted }]}>ACHIEVED</Text>
-                      <Text style={[styles.targetVal, { color: colors.primary }]}>
+                      <Text style={[styles.targetLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                        ACHIEVED
+                      </Text>
+                      <Text
+                        style={[styles.targetVal, { color: colors.primary }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
+                      >
                         {formatCurrency(salesTarget.achievedAmount)}
                       </Text>
                     </View>
 
                     <View style={styles.targetCol}>
-                      <Text style={[styles.targetLabel, { color: colors.textMuted }]}>STATUS</Text>
+                      <Text style={[styles.targetLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                        STATUS
+                      </Text>
                       <Text
                         style={[
                           styles.targetVal,
@@ -344,6 +714,9 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
                                 : colors.warning,
                           },
                         ]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
                       >
                         {salesTarget.targetAmount > 0
                           ? `${Math.round((salesTarget.achievedAmount / salesTarget.targetAmount) * 100)}%`
@@ -352,8 +725,15 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
                     </View>
 
                     <View style={styles.targetCol}>
-                      <Text style={[styles.targetLabel, { color: colors.textMuted }]}>REMAINING</Text>
-                      <Text style={[styles.targetVal, { color: colors.danger }]}>
+                      <Text style={[styles.targetLabel, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>
+                        REMAINING
+                      </Text>
+                      <Text
+                        style={[styles.targetVal, { color: colors.danger }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
+                      >
                         {formatCurrency(Math.max(0, salesTarget.targetAmount - salesTarget.achievedAmount))}
                       </Text>
                     </View>
@@ -492,90 +872,6 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
             </AppCard>
           </>
         )}
-
-        {/* --- 3. Shop Geo-Fence Configuration (Admin Controlled) --- */}
-        {activeSection === 'shop_config' && (
-          <AppCard highlightBorder={isAdmin}>
-            <View style={styles.headerBetween}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>
-                Shop Geo-Fence & Timings
-              </Text>
-              <StatusBadge label={isAdmin ? 'ADMIN ACCESS' : 'READ ONLY'} variant={isAdmin ? 'primary' : 'neutral'} size="small" />
-            </View>
-
-            <Text style={[styles.settingSub, { color: colors.textSecondary, marginBottom: SPACING.md }]}>
-              Staff punch in/out is permitted only within this GPS radius and store operating hours.
-            </Text>
-
-            <Input
-              label="Shop Center Latitude"
-              value={latitude}
-              onChangeText={setLatitude}
-              keyboardType="numeric"
-              editable={isAdmin}
-            />
-
-            <Input
-              label="Shop Center Longitude"
-              value={longitude}
-              onChangeText={setLongitude}
-              keyboardType="numeric"
-              editable={isAdmin}
-            />
-
-            {isAdmin && (
-              <Button
-                title={isDetectingGps ? 'Locating...' : 'Use My Current Location as Shop Center'}
-                icon={<AppIcon name="location" size={16} color={colors.primary} />}
-                onPress={handleSetCurrentGpsAsShop}
-                variant="outline"
-                loading={isDetectingGps}
-                style={{ marginVertical: SPACING.xs }}
-              />
-            )}
-
-            <Input
-              label="Allowed Attendance Radius (Meters) *"
-              placeholder="30"
-              value={radius}
-              onChangeText={setRadius}
-              keyboardType="numeric"
-              helperText="Staff outside 30m will be rejected."
-              editable={isAdmin}
-            />
-
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: SPACING.md }}>
-              <View style={{ flex: 1 }}>
-                <Input
-                  label="Opening Time"
-                  value={openingTime}
-                  onChangeText={setOpeningTime}
-                  editable={isAdmin}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Input
-                  label="Closing Time"
-                  value={closingTime}
-                  onChangeText={setClosingTime}
-                  editable={isAdmin}
-                />
-              </View>
-            </View>
-
-            {isAdmin && (
-              <PrimaryButton
-                title={isSaving ? 'Saving...' : 'Save Geo-Fence Rules'}
-                icon={<AppIcon name="check" size={16} color="#FFFFFF" />}
-                onPress={handleSaveShopConfig}
-                loading={isSaving}
-                size="large"
-                style={{ marginTop: SPACING.md }}
-              />
-            )}
-          </AppCard>
-        )}
-
       </ScrollView>
 
       {/* Formal Salary Statement Modal */}
@@ -678,48 +974,157 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = ({ navigation }) =>
           </View>
         )}
       </ModalCard>
+
+      {currentUser && (
+        <DeviceBindingModal
+          visible={deviceModalVisible}
+          currentUser={currentUser}
+          onClose={() => setDeviceModalVisible(false)}
+        />
+      )}
     </ScreenContainer>
   );
 };
 
 const styles = StyleSheet.create({
-  heroCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.md,
-    padding: SPACING.lg,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-  },
-  avatarBig: {
-    width: 56,
-    height: 56,
+  headerThemeBtn: {
+    width: 38,
+    height: 38,
     borderRadius: RADIUS.full,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarBigText: {
-    color: '#FFF',
+  heroCard: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    color: '#FFFFFF',
     fontSize: 24,
-    fontWeight: '800',
+    fontWeight: '700',
+  },
+  heroIdentityCol: {
+    flex: 1,
+    marginLeft: 14,
+    justifyContent: 'center',
+  },
+  heroNameBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   profileName: {
-    ...TYPOGRAPHY.h2,
-    fontSize: 18,
+    fontSize: 19,
+    fontWeight: '600',
+    flex: 1,
+    letterSpacing: -0.3,
   },
-  profileEmail: {
+  profileDesignation: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 3,
+  },
+  heroContactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 16,
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  heroContactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  heroContactText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  infoIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.md,
+  },
+  infoContent: {
+    flex: 1,
+  },
+  infoLabel: {
+    ...TYPOGRAPHY.captionSmall,
+    fontSize: 10.5,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  infoValue: {
+    ...TYPOGRAPHY.bodyBold,
+    fontSize: 14,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  actionContent: {
+    flex: 1,
+  },
+  actionTitle: {
+    ...TYPOGRAPHY.bodyBold,
+    fontSize: 14,
+  },
+  actionSubtitle: {
     ...TYPOGRAPHY.caption,
     marginTop: 2,
   },
-  roleRow: {
+  logoutCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: SPACING.xs,
-    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.md,
   },
-  phoneText: {
-    ...TYPOGRAPHY.captionSmall,
+  logoutTitle: {
+    ...TYPOGRAPHY.bodyBold,
+    fontSize: 14,
+    color: '#DC2626',
+  },
+  logoutSub: {
+    ...TYPOGRAPHY.caption,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  cardContent: {
+    marginTop: SPACING.xs,
   },
   sectionPills: {
     marginTop: SPACING.md,
@@ -728,7 +1133,27 @@ const styles = StyleSheet.create({
   pillsScroll: {
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.xs,
-    gap: SPACING.xs,
+    paddingRight: SPACING.xl,
+    gap: SPACING.sm,
+    alignItems: 'center',
+  },
+  content: {
+    padding: SPACING.md,
+    paddingBottom: 90,
+  },
+  cardTitle: {
+    ...TYPOGRAPHY.h3,
+    fontSize: 16,
+  },
+  headerBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  settingSub: {
+    ...TYPOGRAPHY.caption,
+    marginTop: 2,
   },
   targetMetricsBox: {
     marginTop: SPACING.sm,
@@ -746,16 +1171,17 @@ const styles = StyleSheet.create({
   targetGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: SPACING.xs,
+    gap: SPACING.xs,
   },
   targetCol: {
-    alignItems: 'center',
     flex: 1,
+    alignItems: 'center',
   },
   targetLabel: {
     ...TYPOGRAPHY.captionSmall,
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: '700',
+    letterSpacing: 0.5,
     marginBottom: 2,
   },
   targetVal: {
@@ -763,7 +1189,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   monthSelectorContainer: {
-    marginVertical: SPACING.sm,
+    marginBottom: SPACING.md,
   },
   selectorLabel: {
     ...TYPOGRAPHY.caption,
@@ -771,21 +1197,36 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   monthChipsScroll: {
-    paddingVertical: 2,
-    gap: SPACING.sm,
+    gap: SPACING.xs,
+    paddingRight: SPACING.xl,
+  },
+  salaryBox: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.md,
+  },
+  salaryItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 5,
+  },
+  dividerLine: {
+    height: 1,
+    marginVertical: SPACING.sm,
   },
   salaryActionsRow: {
     flexDirection: 'row',
-    gap: SPACING.sm,
-    marginTop: SPACING.md,
+    gap: SPACING.md,
   },
   emptySalaryBox: {
-    padding: SPACING.xl,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: SPACING.xl,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    marginTop: SPACING.sm,
+    borderStyle: 'dashed',
   },
   emptyIconCircle: {
     width: 48,
@@ -796,73 +1237,25 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   emptySalaryTitle: {
-    ...TYPOGRAPHY.bodyBold,
-    marginBottom: SPACING.xs,
-    textAlign: 'center',
+    ...TYPOGRAPHY.h3,
+    fontSize: 15,
+    marginBottom: 4,
   },
   emptySalaryText: {
     ...TYPOGRAPHY.caption,
     textAlign: 'center',
-    maxWidth: 280,
     lineHeight: 18,
   },
-  content: {
-    padding: SPACING.lg,
-    paddingBottom: SPACING.huge,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  settingTitle: {
-    ...TYPOGRAPHY.bodyBold,
-  },
-  settingSub: {
-    ...TYPOGRAPHY.caption,
-    marginTop: 2,
-  },
-  cardTitle: {
-    ...TYPOGRAPHY.bodyBold,
-    fontSize: 16,
-  },
-  headerBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  infoRowContainer: {
-    gap: 6,
-  },
-  infoRowText: {
-    ...TYPOGRAPHY.body,
-    fontSize: 14,
-  },
-  salaryBox: {
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    marginVertical: SPACING.sm,
-  },
-  salaryItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginVertical: 4,
-  },
-  dividerLine: {
-    height: 1,
-    marginVertical: SPACING.sm,
-  },
   slipHeader: {
-    alignItems: 'center',
     paddingBottom: SPACING.md,
     borderBottomWidth: 1,
     marginBottom: SPACING.md,
+    alignItems: 'center',
   },
   slipShopName: {
     ...TYPOGRAPHY.h2,
-    fontWeight: '800',
+    fontSize: 18,
+    textAlign: 'center',
   },
   slipAddress: {
     ...TYPOGRAPHY.caption,
@@ -871,84 +1264,81 @@ const styles = StyleSheet.create({
   },
   slipGst: {
     ...TYPOGRAPHY.captionSmall,
+    textAlign: 'center',
     marginTop: 2,
   },
   slipMetaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
     padding: SPACING.sm,
-    marginBottom: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    marginBottom: SPACING.md,
   },
   slipMetaItem: {
     width: '50%',
-    padding: 6,
+    paddingVertical: 4,
   },
   slipMetaLbl: {
     ...TYPOGRAPHY.captionSmall,
     fontSize: 9.5,
     fontWeight: '700',
-    marginBottom: 2,
   },
   slipMetaVal: {
-    ...TYPOGRAPHY.bodyBold,
-    fontSize: 13,
+    ...TYPOGRAPHY.caption,
+    fontWeight: '600',
+    marginTop: 1,
   },
   slipTable: {
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     overflow: 'hidden',
-    marginVertical: SPACING.xs,
+    marginBottom: SPACING.md,
   },
   slipTableRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 8,
   },
   slipColText: {
-    ...TYPOGRAPHY.body,
-    fontSize: 13.5,
+    ...TYPOGRAPHY.caption,
   },
   slipColVal: {
-    ...TYPOGRAPHY.bodyBold,
-    fontSize: 14,
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '600',
   },
   slipTotalLbl: {
     ...TYPOGRAPHY.bodyBold,
-    fontSize: 15,
   },
   slipTotalVal: {
     ...TYPOGRAPHY.h3,
-    fontWeight: '800',
+    fontSize: 16,
   },
   sealRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginTop: SPACING.lg,
-    paddingTop: SPACING.sm,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.md,
   },
   sealCol: {
     flex: 1,
   },
-  sealText: {
-    ...TYPOGRAPHY.captionSmall,
-    fontSize: 10,
-  },
   sealColRight: {
     alignItems: 'flex-end',
   },
+  sealText: {
+    ...TYPOGRAPHY.captionSmall,
+    fontSize: 9.5,
+  },
   sealSignText: {
     ...TYPOGRAPHY.bodyBold,
-    fontStyle: 'italic',
-    textDecorationLine: 'underline',
+    fontSize: 13,
   },
   sealSub: {
     ...TYPOGRAPHY.captionSmall,
     fontSize: 10,
-    marginTop: 2,
   },
 });

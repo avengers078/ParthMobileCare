@@ -5,33 +5,60 @@ import {
   StyleSheet,
   ViewStyle,
   StyleProp,
+  AccessibilityRole,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from './Button';
 import { ClipboardList } from 'lucide-react-native';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
 
-interface EmptyStateProps {
+export interface EmptyStateProps {
   icon?: string | React.ReactNode;
   title: string;
   description?: string;
   actionTitle?: string;
   onActionPress?: () => void;
   style?: StyleProp<ViewStyle>;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  testID?: string;
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
-  icon = <ClipboardList size={28} color="#194D9C" strokeWidth={1.8} />,
+  icon,
   title,
   description,
   actionTitle,
   onActionPress,
   style,
+  accessibilityRole = 'summary',
+  accessibilityLabel,
+  testID,
 }) => {
   const { colors, isDark } = useTheme();
 
+  const renderedIcon =
+    icon !== undefined ? (
+      typeof icon === 'string' ? (
+        <Text style={styles.iconText}>{icon}</Text>
+      ) : (
+        icon
+      )
+    ) : (
+      <ClipboardList size={28} color={colors.primary} strokeWidth={1.8} />
+    );
+
+  const computedA11yLabel =
+    accessibilityLabel ||
+    `${title}${description ? `. ${description}` : ''}`;
+
   return (
-    <View style={[styles.container, style]}>
+    <View
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={computedA11yLabel}
+      testID={testID}
+      style={[styles.container, style]}
+    >
       <View
         style={[
           styles.iconCircle,
@@ -42,11 +69,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           },
         ]}
       >
-        {typeof icon === 'string' ? (
-          <Text style={styles.iconText}>{icon}</Text>
-        ) : (
-          icon
-        )}
+        {renderedIcon}
       </View>
 
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
@@ -63,6 +86,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           onPress={onActionPress}
           variant="primary"
           size="small"
+          accessibilityLabel={actionTitle}
           style={styles.actionBtn}
         />
       ) : null}

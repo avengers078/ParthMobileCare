@@ -6,33 +6,57 @@ import {
   ViewStyle,
   StyleProp,
   View,
+  AccessibilityRole,
+  Insets,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { RADIUS, SPACING } from '../theme';
 
-interface FilterChipProps {
+export interface FilterChipProps {
   label: string;
   active: boolean;
   onPress: () => void;
   count?: number;
   icon?: string | React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
+  hitSlop?: Insets | number;
 }
 
-export const FilterChip: React.FC<FilterChipProps> = ({
+export const FilterChip: React.FC<FilterChipProps> = React.memo(({
   label,
   active,
   onPress,
   count,
   icon,
   style,
+  accessibilityRole = 'button',
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
+  hitSlop,
 }) => {
   const { colors, isDark } = useTheme();
+
+  // Ensures interactive touch target reaches >= 48dp vertically without mutating visual styling
+  const defaultHitSlop: Insets = { top: 5, bottom: 5, left: 4, right: 4 };
+  const computedLabel =
+    accessibilityLabel ||
+    (count !== undefined ? `${label}, ${count} items` : label);
 
   return (
     <TouchableOpacity
       activeOpacity={0.7}
       onPress={onPress}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={computedLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ selected: active }}
+      testID={testID}
+      hitSlop={hitSlop !== undefined ? hitSlop : defaultHitSlop}
       style={[
         styles.chip,
         {
@@ -105,7 +129,7 @@ export const FilterChip: React.FC<FilterChipProps> = ({
       ) : null}
     </TouchableOpacity>
   );
-};
+});
 
 const styles = StyleSheet.create({
   chip: {
@@ -115,7 +139,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    height: 38,
+    minHeight: 38,
   },
   iconContainer: {
     marginRight: 6,

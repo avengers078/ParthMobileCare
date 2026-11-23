@@ -1,13 +1,26 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle, StyleProp } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, StyleProp, AccessibilityRole } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { RADIUS } from '../theme';
 
+export type BadgeVariant =
+  | 'primary'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
+  | 'neutral'
+  | 'dark'
+  | 'purple';
+
 export interface BadgeProps {
   label: string;
-  variant?: 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'dark' | 'purple';
+  variant?: BadgeVariant;
   size?: 'small' | 'medium';
   style?: StyleProp<ViewStyle>;
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
+  testID?: string;
 }
 
 export const Badge: React.FC<BadgeProps> = ({
@@ -15,6 +28,9 @@ export const Badge: React.FC<BadgeProps> = ({
   variant = 'primary',
   size = 'small',
   style,
+  accessibilityRole = 'text',
+  accessibilityLabel,
+  testID,
 }) => {
   const { isDark } = useTheme();
 
@@ -67,6 +83,9 @@ export const Badge: React.FC<BadgeProps> = ({
 
   return (
     <View
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel || label}
+      testID={testID}
       style={[
         styles.badge,
         { backgroundColor: badgeColors.bg },

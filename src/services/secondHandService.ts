@@ -14,12 +14,25 @@ export class SecondHandService {
     >,
     currentUser: User
   ): Promise<SecondHandPurchase> {
+    const existing = await StorageService.getPurchases();
+    const duplicateInStock = existing.find(
+      p => p.imei === data.imei && p.status === 'in_stock'
+    );
+    if (duplicateInStock) {
+      throw new Error(`Device with IMEI ${data.imei} is already in store stock (${duplicateInStock.brand} ${duplicateInStock.model}).`);
+    }
+
     const purchaseDate = getTodayDateString();
     const purchaseTime = getCurrentTimeString();
+
+    const rawAadhaar = data.aadhaarNumber || '';
+    const cleanDigits = rawAadhaar.replace(/[^0-9]/g, '');
+    const maskedAadhaar = cleanDigits.length >= 4 ? `XXXX-XXXX-${cleanDigits.slice(-4)}` : (rawAadhaar.startsWith('XXXX') ? rawAadhaar : 'XXXX-XXXX-XXXX');
 
     const newPurchase: SecondHandPurchase = {
       ...data,
       id: `pur_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      aadhaarNumber: maskedAadhaar,
       purchaseDate,
       purchaseTime,
       purchasedByStaffId: currentUser.id,
@@ -30,6 +43,7 @@ export class SecondHandService {
     await StorageService.savePurchase(newPurchase);
 
     await StorageService.addNotification({
+      userId: currentUser.id,
       title: 'Second-Hand Mobile Purchased',
       body: `${newPurchase.brand} ${newPurchase.model} (IMEI: ${newPurchase.imei}) bought for ₹${newPurchase.purchaseAmount}`,
       type: 'purchase',
@@ -77,6 +91,7 @@ export class SecondHandService {
     await StorageService.saveSale(newSale);
 
     await StorageService.addNotification({
+      userId: currentUser.id,
       title: 'Second-Hand Mobile Sold',
       body: `${newSale.brand} ${newSale.model} sold for ₹${newSale.sellingAmount} (Profit: ₹${profitAmount})`,
       type: 'sale',

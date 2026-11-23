@@ -1,8 +1,20 @@
+import { User } from '../src/types';
+
+jest.mock('../src/services/firebase', () => ({
+  __esModule: true,
+  default: {
+    init: jest.fn().mockResolvedValue(true),
+    getAuth: jest.fn(() => ({ currentUser: { uid: 'test_uid' } })),
+    getFirestore: jest.fn(() => ({})),
+    getStorage: jest.fn(() => ({})),
+    getFunctions: jest.fn(() => ({})),
+  },
+}));
+
 import { LeadService } from '../src/services/leadService';
 import { StaffPerformanceService } from '../src/services/staffPerformanceService';
 import { StorageService } from '../src/services/storageService';
-import { FirestoreSyncService, FIRESTORE_COLLECTIONS } from '../src/services/firestoreSync';
-import { User } from '../src/types';
+import { FIRESTORE_COLLECTIONS } from '../src/services/firestoreSync';
 
 describe('Lead Management, Staff Target & Cloud Sync Tests', () => {
   const mockAdmin: User = {
@@ -137,6 +149,7 @@ describe('Lead Management, Staff Target & Cloud Sync Tests', () => {
   });
 
   test('salary slip retrieval for recorded months and null for unrecorded months', async () => {
+    await StorageService.seedInitialDataIfNeeded();
     // 1. September 2026 has a seeded slip for mockAdmin (user_admin_1 / user_admin_test)
     const adminUser: User = {
       ...mockAdmin,
@@ -252,6 +265,125 @@ describe('Lead Management, Staff Target & Cloud Sync Tests', () => {
 
     expect(closedLeadIds.has(currentLead2.id)).toBe(true);
     expect(closedLeadIds.has('past_lead_test_1')).toBe(false);
+  });
+
+  test('role-based lead scoping: staff sees only own leads while admin sees all', async () => {
+    const staffUser1: User = {
+      id: 'staff_alice',
+      name: 'Alice',
+      email: 'alice@parthmobile.com',
+      phone: '9870000001',
+      role: 'staff',
+      designation: 'Sales Executive',
+      joinedDate: '2024-01-01',
+      basicSalary: 20000,
+      monthlyTarget: 200000,
+      isActive: true,
+    };
+
+    const staffUser2: User = {
+      id: 'staff_bob',
+      name: 'Bob',
+      email: 'bob@parthmobile.com',
+      phone: '9870000002',
+      role: 'staff',
+      designation: 'Sales Executive',
+      joinedDate: '2024-01-01',
+      basicSalary: 20000,
+      monthlyTarget: 200000,
+      isActive: true,
+    };
+
+    // Alice creates a lead
+    const leadAlice = await LeadService.createLead(
+      {
+        name: 'Alice Customer',
+        phone: '9871112233',
+        interestedBrand: 'Vivo',
+        interestedModel: 'Y200',
+        budget: 15000,
+        remarks: 'Wants blue color',
+        createdBy: staffUser1.id,
+        createdByName: staffUser1.name,
+      },
+      staffUser1,
+      'new',
+      false
+    );
+
+    // Bob creates a lead
+    const leadBob = await LeadService.createLead(
+      {
+        name: 'Bob Customer',
+        phone: '9872223344',
+        interestedBrand: 'Samsung',
+        interestedModel: 'M35',
+        budget: 18000,
+        remarks: 'Cash purchase',
+        createdBy: staffUser2.id,
+        createdByName: staffUser2.name,
+      },
+      staffUser2,
+      'new',
+      false
+    );
+
+    // Alice should only see her lead, not Bob's lead
+    const aliceLeads = await LeadService.getLeadsForUser(staffUser1);
+    expect(aliceLeads.some(l => l.id === leadAlice.id)).toBe(true);
+    expect(aliceLeads.some(l => l.id === leadBob.id)).toBe(false);
+
+    // Bob should only see his lead, not Alice's lead
+    const bobLeads = await LeadService.getLeadsForUser(staffUser2);
+    expect(bobLeads.some(l => l.id === leadBob.id)).toBe(true);
+    expect(bobLeads.some(l => l.id === leadAlice.id)).toBe(false);
+
+    // Admin should see both leads
+    const adminLeads = await LeadService.getLeadsForUser(mockAdmin);
+    expect(adminLeads.some(l => l.id === leadAlice.id)).toBe(true);
+    expect(adminLeads.some(l => l.id === leadBob.id)).toBe(true);
+  });
+
+  test('guards against rapid duplicate lead creation within 10s', async () => {
+    const leadData = {
+      name: 'Duplicate Test Customer',
+      phone: '9898989898',
+      interestedBrand: 'OnePlus',
+      interestedModel: 'Nord CE4',
+      budget: 20000,
+      remarks: 'First submission',
+      createdBy: mockAdmin.id,
+      createdByName: mockAdmin.name,
+    };
+
+    const firstLead = await LeadService.createLead(leadData, mockAdmin, 'new', false);
+    const secondLead = await LeadService.createLead(leadData, mockAdmin, 'new', false);
+
+    expect(firstLead.id).toBe(secondLead.id);
+  });
+
+  test('preserves lead persistence across simulated app restart and local retrieval', async () => {
+    const testLead = await LeadService.createLead(
+      {
+        name: 'Persistent Lead',
+        phone: '9899112233',
+        interestedBrand: 'Apple',
+        interestedModel: 'iPhone 15',
+        budget: 70000,
+        remarks: 'Wants installment',
+        createdBy: mockAdmin.id,
+        createdByName: mockAdmin.name,
+      },
+      mockAdmin,
+      'new',
+      false
+    );
+
+    const leads = await StorageService.getLeads();
+    const found = leads.find(l => l.id === testLead.id);
+    expect(found).toBeDefined();
+    expect(found?.name).toBe('Persistent Lead');
+    expect(found?.phone).toBe('9899112233');
   });
 });
 
