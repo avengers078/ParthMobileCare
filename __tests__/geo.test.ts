@@ -169,10 +169,28 @@ describe('Attendance Service Workflow & Sequence Integrity', () => {
     basicSalary: 25000,
     monthlyTarget: 200000,
     isActive: true,
+    hasFaceRegistered: true,
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    StorageService.clearMemoryCache();
+    // Set up face template so biometric enrollment check passes
+    await StorageService.saveFaceTemplate({
+      id: 'tmpl_test_emp_001',
+      userId: 'test_emp_001',
+      userName: 'Test Staff',
+      faceDescriptor: [],
+      qualityScore: 0.95,
+      registeredAt: new Date().toISOString(),
+      registeredBy: 'Admin',
+      consentObtained: true,
+      consentTimestamp: new Date().toISOString(),
+      templateHash: 'mock_hash',
+      sampleCount: 3,
+      status: 'active',
+      approvalStatus: 'approved',
+    });
   });
 
   test('blocks Punch In when outside the 30m allowed radius', async () => {

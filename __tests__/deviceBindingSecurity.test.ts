@@ -9,6 +9,32 @@ jest.mock('../src/services/firebase', () => ({
   },
 }));
 
+const mockKeychainStore = new Map<string, { username: string; password: string }>();
+jest.mock('react-native-keychain', () => ({
+  setGenericPassword: jest.fn(async (username: string, password: string, options?: any) => {
+    const service = options?.service || 'default';
+    mockKeychainStore.set(service, { username, password });
+    return { service, storage: 'KC_MOCK' };
+  }),
+  getGenericPassword: jest.fn(async (options?: any) => {
+    const service = options?.service || 'default';
+    const item = mockKeychainStore.get(service);
+    return item ? { service, username: item.username, password: item.password, storage: 'KC_MOCK' } : false;
+  }),
+  resetGenericPassword: jest.fn(async (options?: any) => {
+    mockKeychainStore.delete(options?.service || 'default');
+    return true;
+  }),
+  hasGenericPassword: jest.fn(async (options?: any) => mockKeychainStore.has(options?.service || 'default')),
+  getAllGenericPasswordServices: jest.fn(async () => Array.from(mockKeychainStore.keys())),
+  getSupportedBiometryType: jest.fn(async () => null),
+  ACCESSIBLE: { WHEN_UNLOCKED: 'AccessibleWhenUnlocked' },
+  ACCESS_CONTROL: { BIOMETRY_ANY: 'BiometryAny' },
+  AUTHENTICATION_TYPE: { BIOMETRICS: 'AuthenticationWithBiometrics' },
+  SECURITY_LEVEL: { SECURE_SOFTWARE: 'SECURE_SOFTWARE' },
+  STORAGE_TYPE: { AES: 'AES' },
+}));
+
 jest.mock('../src/services/faceRecognitionService', () => {
   const actual = jest.requireActual('../src/services/faceRecognitionService');
   return {
@@ -73,6 +99,8 @@ describe('Phase 1: Secure Device Registration & Binding', () => {
   });
 
   beforeEach(async () => {
+    mockKeychainStore.clear();
+    StorageService.clearMemoryCache();
     await AsyncStorage.clear();
     await DeviceSecurityService.resetLocalDeviceCredentials();
     await StorageService.saveFaceTemplate({

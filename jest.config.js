@@ -24,5 +24,6 @@ module.exports = {
     '<rootDir>/functions/',
     '<rootDir>/admin-dashboard/',
     '<rootDir>/__tests__/firestoreRulesEmulator.test.ts',
+    '<rootDir>/__tests__/announcementsEmulatorRules.test.ts',
   ],
 };

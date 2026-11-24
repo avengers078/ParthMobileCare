@@ -523,7 +523,7 @@ describe('CRITICAL FIRESTORE SECURITY REMEDIATION ACCEPTANCE TESTS', () => {
       createdBy: 'admin_uid',
       createdByName: 'Parth Patel',
       createdAt: '2026-11-01T10:00:00Z',
-      expiresAt: '2026-11-08T10:00:00Z',
+      expiresAt: '2099-11-08T10:00:00Z',
       status: 'pending',
     };
 
