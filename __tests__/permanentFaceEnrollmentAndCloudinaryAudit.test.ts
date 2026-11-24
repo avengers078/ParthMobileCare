@@ -68,6 +68,7 @@ describe('PARTH MOBILE CARE — PERMANENT FACE ENROLLMENT & CLOUDINARY STORAGE A
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    StorageService.clearMemoryCache();
     await AsyncStorage.clear();
   });
 

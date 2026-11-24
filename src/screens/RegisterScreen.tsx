@@ -413,7 +413,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
       try {
         await currentUser.reload();
       } catch (reloadErr: any) {
-        console.warn('[RegistrationSubmit] User reload warning:', reloadErr);
+        if (__DEV__) console.warn('[RegistrationSubmit] User reload warning:', reloadErr);
         if (reloadErr?.code === 'auth/network-request-failed' || String(reloadErr?.message).includes('network')) {
           showError('Network Failure', 'Unable to reach Firebase authentication server. Please check your internet connection.');
           return;
@@ -447,7 +447,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
 
       // Diagnostic logging (development only - zero sensitive biometrics or credentials)
       if (__DEV__) {
-        console.log('[RegistrationDiagnostics]', {
+        if (__DEV__) console.log('[RegistrationDiagnostics]', {
           uid: currentUser.uid,
           email: currentUser.email,
           emailVerifiedOnUser: currentUser.emailVerified,
@@ -585,7 +585,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
         }
       );
     } catch (err: any) {
-      console.warn('[RegistrationSubmit] Submission failed:', {
+      if (__DEV__) console.warn('[RegistrationSubmit] Submission failed:', {
         code: err?.code,
         message: err?.message,
       });

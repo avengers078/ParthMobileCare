@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -93,7 +93,7 @@ export const ReportsScreen: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportingType, setExportingType] = useState<'excel' | 'pdf' | 'csv' | null>(null);
 
-  const loadAllReports = async () => {
+  const loadAllReports = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
     try {
@@ -102,39 +102,33 @@ export const ReportsScreen: React.FC = () => {
         staffId: selectedStaffId,
       };
 
-      // 1. Live filtered report data from ReportExportService
-      const fullData = await ReportExportService.getFullReportData(
-        currentUser,
-        isAdmin,
-        false,
-        filterOpts
-      );
+      // Parallelize all independent data fetches
+      const currentMonthKey = getTodayDateString().substring(0, 7);
+      const [fullData, users, payroll] = await Promise.all([
+        ReportExportService.getFullReportData(currentUser, isAdmin, false, filterOpts),
+        StorageService.getAllUsers(),
+        PayrollService.getMonthlyPayroll(currentMonthKey),
+      ]);
 
       setBuySellStats(fullData.summaryData.buySellStats);
       setLeadStats(fullData.summaryData.leadStats);
       setAttendanceSummary(fullData.summaryData.attendanceSummary);
       setStaffLeaderboard(fullData.summaryData.staffLeaderboard);
 
-      // 2. Load staff list for filter bar
-      const users = await StorageService.getAllUsers();
       const activeStaff = users.filter(u => u.isActive !== false);
       setStaffOptions(activeStaff);
-
-      // 3. Payroll summary
-      const currentMonthKey = getTodayDateString().substring(0, 7);
-      const payroll = await PayrollService.getMonthlyPayroll(currentMonthKey);
       setPayrollSummary(payroll);
     } catch (e: any) {
-      console.warn('Reports load error:', e);
+      if (__DEV__) console.warn('Reports load error:', e);
       setLoadError(e?.message || 'Failed to aggregate business reports.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [dateRange, selectedStaffId, currentUser, isAdmin]);
 
   useEffect(() => {
     loadAllReports();
-  }, [dateRange, selectedStaffId]);
+  }, [loadAllReports]);
 
   const handleExportExcel = async () => {
     setIsExporting(true);
@@ -204,10 +198,10 @@ export const ReportsScreen: React.FC = () => {
     }
   };
 
-  const punctualityRate =
+  const punctualityRate = useMemo(() =>
     attendanceSummary.totalRecords > 0
       ? Math.round((attendanceSummary.onTimePresent / attendanceSummary.totalRecords) * 100)
-      : 100;
+      : 100, [attendanceSummary.totalRecords, attendanceSummary.onTimePresent]);
 
   if (!isAdmin) {
     return (

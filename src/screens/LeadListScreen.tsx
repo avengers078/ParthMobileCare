@@ -170,7 +170,7 @@ export const LeadListScreen: React.FC = () => {
         }
       },
       (err) => {
-        console.warn('[LeadListScreen] Cloud leads subscription error:', err);
+        if (__DEV__) console.warn('[LeadListScreen] Cloud leads subscription error:', err);
       }
     );
     return () => {

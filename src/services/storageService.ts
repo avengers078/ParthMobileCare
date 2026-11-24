@@ -947,8 +947,14 @@ export class StorageService {
 
   // --- Sales Targets & Incentives ---
   static async getSalesTargets(monthKey?: string): Promise<SalesTarget[]> {
-    const data = await AsyncStorage.getItem(STORAGE_KEYS.SALES_TARGETS);
-    const targets: SalesTarget[] = data ? JSON.parse(data) : [];
+    let targets: SalesTarget[];
+    if (StorageService.memoryCache.has(STORAGE_KEYS.SALES_TARGETS)) {
+      targets = StorageService.memoryCache.get(STORAGE_KEYS.SALES_TARGETS);
+    } else {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.SALES_TARGETS);
+      targets = data ? JSON.parse(data) : [];
+      StorageService.memoryCache.set(STORAGE_KEYS.SALES_TARGETS, targets);
+    }
     if (monthKey) {
       return targets.filter(t => t.month === monthKey);
     }
@@ -963,14 +969,20 @@ export class StorageService {
     } else {
       list.unshift(target);
     }
+    StorageService.memoryCache.set(STORAGE_KEYS.SALES_TARGETS, list);
     await AsyncStorage.setItem(STORAGE_KEYS.SALES_TARGETS, JSON.stringify(list));
     FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.SALES_TARGETS, target.id, target).catch(() => {});
   }
 
   // --- Notifications ---
   static async getNotifications(): Promise<AppNotification[]> {
+    if (StorageService.memoryCache.has(STORAGE_KEYS.NOTIFICATIONS)) {
+      return StorageService.memoryCache.get(STORAGE_KEYS.NOTIFICATIONS);
+    }
     const data = await AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-    return data ? JSON.parse(data) : [];
+    const list = data ? JSON.parse(data) : [];
+    StorageService.memoryCache.set(STORAGE_KEYS.NOTIFICATIONS, list);
+    return list;
   }
 
   static async addNotification(notif: Omit<AppNotification, 'id' | 'timestamp' | 'read' | 'userId'> & { userId?: string }): Promise<void> {
@@ -988,6 +1000,7 @@ export class StorageService {
       read: false,
     };
     list.unshift(newItem);
+    StorageService.memoryCache.set(STORAGE_KEYS.NOTIFICATIONS, list);
     await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(list));
 
     // Only sync legitimate client workflow notifications permitted by Firestore rules.
@@ -1125,8 +1138,13 @@ export class StorageService {
 
   // --- Face Biometric Templates ---
   static async getFaceTemplates(): Promise<FaceTemplate[]> {
+    if (StorageService.memoryCache.has(STORAGE_KEYS.FACE_TEMPLATES)) {
+      return StorageService.memoryCache.get(STORAGE_KEYS.FACE_TEMPLATES);
+    }
     const data = await AsyncStorage.getItem(STORAGE_KEYS.FACE_TEMPLATES);
-    return data ? JSON.parse(data) : [];
+    const list = data ? JSON.parse(data) : [];
+    StorageService.memoryCache.set(STORAGE_KEYS.FACE_TEMPLATES, list);
+    return list;
   }
 
   static async getFaceTemplate(userId: string): Promise<FaceTemplate | null> {
@@ -1203,6 +1221,7 @@ export class StorageService {
       list.push(template);
     }
     await AsyncStorage.setItem(STORAGE_KEYS.FACE_TEMPLATES, JSON.stringify(list));
+    StorageService.memoryCache.set(STORAGE_KEYS.FACE_TEMPLATES, list);
   }
 
   static async deleteFaceTemplate(userId: string, _deletedBy?: string): Promise<boolean> {
@@ -1210,6 +1229,7 @@ export class StorageService {
     const filtered = list.filter(t => t.userId !== userId);
     if (filtered.length !== list.length) {
       await AsyncStorage.setItem(STORAGE_KEYS.FACE_TEMPLATES, JSON.stringify(filtered));
+      StorageService.memoryCache.set(STORAGE_KEYS.FACE_TEMPLATES, filtered);
 
       // Synchronize User record flag
       const users = await this.getAllUsers();

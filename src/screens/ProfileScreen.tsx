@@ -243,13 +243,13 @@ export const ProfileScreen: React.FC<{ navigation?: any }> = () => {
       StaffPerformanceService.getSalarySlip(currentUser, selectedMonthKey)
         .then(setSalarySlip)
         .catch(err => {
-          console.warn('Error loading slip:', err);
+          if (__DEV__) console.warn('Error loading slip:', err);
           setSalarySlip(null);
         });
 
       StaffPerformanceService.getStaffTarget(currentUser.id, selectedMonthKey)
         .then(setSalesTarget)
-        .catch(err => console.warn('Error loading target:', err));
+        .catch(err => { if (__DEV__) console.warn('Error loading target:', err); });
     }
   }, [currentUser, selectedMonthKey]);
 

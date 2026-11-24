@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -114,11 +114,13 @@ export const StaffManagementScreen: React.FC<StaffManagementScreenProps> = ({ na
   const emailInputRef = useRef<any>(null);
   const phoneInputRef = useRef<any>(null);
 
-  const loadStaffData = async () => {
-    const users = await StorageService.getAllUsers();
+  const loadStaffData = useCallback(async () => {
+    const [users, templates] = await Promise.all([
+      StorageService.getAllUsers(),
+      StorageService.getFaceTemplates(),
+    ]);
     setStaffList(users);
 
-    const templates = await StorageService.getFaceTemplates();
     const tmplMap: Record<string, FaceEnrollmentStatus> = {};
     let pendingCount = 0;
 
@@ -134,17 +136,17 @@ export const StaffManagementScreen: React.FC<StaffManagementScreenProps> = ({ na
     setPendingApprovalsCount(pendingCount);
 
     const monthKey = getTodayDateString().substring(0, 7);
+    const targetResults = await Promise.all(
+      users.map(u => StaffPerformanceService.getStaffTarget(u.id, monthKey))
+    );
     const map: Record<string, SalesTarget> = {};
-    for (const u of users) {
-      const tgt = await StaffPerformanceService.getStaffTarget(u.id, monthKey);
-      map[u.id] = tgt;
-    }
+    users.forEach((u, i) => { map[u.id] = targetResults[i]; });
     setTargetsMap(map);
-  };
+  }, []);
 
   useEffect(() => {
     loadStaffData();
-  }, []);
+  }, [loadStaffData]);
 
   const resetForm = () => {
     setName('');
@@ -517,7 +519,7 @@ export const StaffManagementScreen: React.FC<StaffManagementScreenProps> = ({ na
     });
   };
 
-  const filteredStaff = staffList.filter(u => {
+  const filteredStaff = useMemo(() => staffList.filter(u => {
     const matchesRole = filterRole === 'all' || u.role === filterRole;
     const matchesStatus =
       filterStatus === 'all' ||
@@ -531,17 +533,17 @@ export const StaffManagementScreen: React.FC<StaffManagementScreenProps> = ({ na
       u.email.toLowerCase().includes(q) ||
       (u.designation && u.designation.toLowerCase().includes(q));
     return matchesRole && matchesStatus && matchesQuery;
-  });
+  }), [staffList, filterRole, filterStatus, searchQuery]);
 
-  const sortedStaff = [...filteredStaff].sort((a, b) => {
+  const sortedStaff = useMemo(() => [...filteredStaff].sort((a, b) => {
     if (sortBy === 'name') return a.name.localeCompare(b.name);
     if (sortBy === 'date') return (b.joinedDate || '').localeCompare(a.joinedDate || '');
     if (sortBy === 'salary') return b.basicSalary - a.basicSalary;
     return 0;
-  });
+  }), [filteredStaff, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(sortedStaff.length / PAGE_SIZE));
-  const paginatedStaff = sortedStaff.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paginatedStaff = useMemo(() => sortedStaff.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [sortedStaff, page]);
 
   if (!isAdmin) {
     return (

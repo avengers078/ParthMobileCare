@@ -131,7 +131,7 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
       return pos;
     } catch (e: any) {
       if (reqId !== gpsRequestIdRef.current) return null;
-      console.warn('GPS location error:', e);
+      if (__DEV__) console.warn('GPS location error:', e);
       setGpsError(e.message || 'Could not acquire GPS position.');
       setCurrentCoords(null);
       setDistanceMeters(null);

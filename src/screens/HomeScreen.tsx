@@ -222,7 +222,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       list.sort((a, b) => b.date.localeCompare(a.date));
       setRecentActivities(list.slice(0, 5));
     } catch (e) {
-      console.warn("Dashboard load error:", e);
+      if (__DEV__) console.warn("Dashboard load error:", e);
     }
   }, [currentUser]);
 

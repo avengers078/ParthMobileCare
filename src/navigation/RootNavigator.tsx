@@ -11,16 +11,44 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { AppIcon, AppIconName } from '../components';
 
+// Eagerly loaded (always needed immediately)
 import { HomeScreen } from '../screens/HomeScreen';
-import { LeadListScreen } from '../screens/LeadListScreen';
-import { PriceListScreen } from '../screens/PriceListScreen';
-import { ProfileScreen } from '../screens/ProfileScreen';
-import { AttendanceScreen } from '../screens/AttendanceScreen';
-import { SecondHandScreen } from '../screens/SecondHandScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
 import { RegistrationStatusScreen } from '../screens/RegistrationStatusScreen';
-import { NotificationsScreen } from '../screens/NotificationsScreen';
+
+// Lazily loaded (not needed on startup — loaded only when navigated to)
+const LeadListScreen = React.lazy(() => import('../screens/LeadListScreen').then(m => ({ default: m.LeadListScreen })));
+const PriceListScreen = React.lazy(() => import('../screens/PriceListScreen').then(m => ({ default: m.PriceListScreen })));
+const ProfileScreen = React.lazy(() => import('../screens/ProfileScreen').then(m => ({ default: m.ProfileScreen })));
+const AttendanceScreen = React.lazy(() => import('../screens/AttendanceScreen').then(m => ({ default: m.AttendanceScreen })));
+const SecondHandScreen = React.lazy(() => import('../screens/SecondHandScreen').then(m => ({ default: m.SecondHandScreen })));
+const NotificationsScreen = React.lazy(() => import('../screens/NotificationsScreen').then(m => ({ default: m.NotificationsScreen })));
+
+// Suspense wrapper for lazy screens
+const LazyFallback = () => {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+      <ActivityIndicator size="small" color={colors.primary} />
+    </View>
+  );
+};
+
+const withSuspense = (LazyComponent: React.LazyExoticComponent<React.ComponentType<any>>) => {
+  return React.memo((props: any) => (
+    <React.Suspense fallback={<LazyFallback />}>
+      <LazyComponent {...props} />
+    </React.Suspense>
+  ));
+};
+
+const SuspenseLeadList = withSuspense(LeadListScreen);
+const SuspensePriceList = withSuspense(PriceListScreen);
+const SuspenseProfile = withSuspense(ProfileScreen);
+const SuspenseAttendance = withSuspense(AttendanceScreen);
+const SuspenseSecondHand = withSuspense(SecondHandScreen);
+const SuspenseNotifications = withSuspense(NotificationsScreen);
 
 const RootStack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -154,17 +182,17 @@ const MainTabs: React.FC = React.memo(() => {
       />
       <Tab.Screen
         name="LeadsTab"
-        component={LeadListScreen}
+        component={SuspenseLeadList}
         options={{ tabBarLabel: 'Leads' }}
       />
       <Tab.Screen
         name="PriceListTab"
-        component={PriceListScreen}
+        component={SuspensePriceList}
         options={{ tabBarLabel: 'Prices' }}
       />
       <Tab.Screen
         name="ProfileTab"
-        component={ProfileScreen}
+        component={SuspenseProfile}
         options={{ tabBarLabel: 'Profile' }}
       />
     </Tab.Navigator>
@@ -365,11 +393,11 @@ export const RootNavigator: React.FC = () => {
         <RootStack.Screen name="MainTabs" component={MainTabs} />
 
         {/* Secondary Modules (Stack Navigation with Back Stack) */}
-        <RootStack.Screen name="Attendance" component={AttendanceScreen} />
-        <RootStack.Screen name="AttendanceTab" component={AttendanceScreen} />
-        <RootStack.Screen name="BuySell" component={SecondHandScreen} />
-        <RootStack.Screen name="BuySellTab" component={SecondHandScreen} />
-        <RootStack.Screen name="Notifications" component={NotificationsScreen} />
+        <RootStack.Screen name="Attendance" component={SuspenseAttendance} />
+        <RootStack.Screen name="AttendanceTab" component={SuspenseAttendance} />
+        <RootStack.Screen name="BuySell" component={SuspenseSecondHand} />
+        <RootStack.Screen name="BuySellTab" component={SuspenseSecondHand} />
+        <RootStack.Screen name="Notifications" component={SuspenseNotifications} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

@@ -59,7 +59,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
       const list = await StorageService.getNotifications();
       setNotifications(list);
     } catch (err) {
-      console.warn('[NotificationsScreen] Load error:', err);
+      if (__DEV__) console.warn('[NotificationsScreen] Load error:', err);
     }
   }, []);
 
@@ -69,7 +69,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
       await FirestoreSyncService.pullAllCloudToLocal();
       await loadNotifications();
     } catch (e) {
-      console.warn('[NotificationsScreen] Refresh sync error:', e);
+      if (__DEV__) console.warn('[NotificationsScreen] Refresh sync error:', e);
     } finally {
       setRefreshing(false);
     }
@@ -84,7 +84,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
       await StorageService.markAllNotificationsRead();
       await loadNotifications();
     } catch (e) {
-      console.warn('[NotificationsScreen] Mark all read error:', e);
+      if (__DEV__) console.warn('[NotificationsScreen] Mark all read error:', e);
     }
   };
 
@@ -139,8 +139,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ naviga
     });
   }, [notifications, filterType]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-  const announcementCount = notifications.filter(n => n.type === 'announcement').length;
+  const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
+  const announcementCount = useMemo(() => notifications.filter(n => n.type === 'announcement').length, [notifications]);
 
   const getNotificationIcon = (type: AppNotification['type'], priority?: string) => {
     if (type === 'announcement') {

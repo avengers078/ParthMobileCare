@@ -204,7 +204,7 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
               finalBillUri = uploadRes.secureUrl;
             }
           } catch (uploadErr) {
-            console.warn('[SecondHandScreen] Bill upload to Cloudinary error:', uploadErr);
+            if (__DEV__) console.warn('[SecondHandScreen] Bill upload to Cloudinary error:', uploadErr);
           }
         }
       }
