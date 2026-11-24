@@ -29,11 +29,11 @@ export async function initializeOnDeviceFaceAuth(): Promise<boolean> {
         await FaceAuth.init({
           deviceId: 'parth-mobile-care-device',
           debug: false,
-          challenges: ['blink', 'smile', 'turn_head'],
+          challenges: ['blink', 'turn_left', 'turn_right', 'turn_head', 'smile'],
           thresholds: {
-            fineThreshold: 0.70,
-            coarseThreshold: 0.50,
-            matchCosine: 0.65,
+            fineThreshold: 0.64,
+            coarseThreshold: 0.45,
+            matchCosine: 0.64,
             centerMargin: 0.02,
             minFaceArea: 0.04,
             maxYaw: 40,

@@ -192,11 +192,13 @@ export const MultiDeviceInspectionCapture: React.FC<MultiDeviceInspectionCapture
 
       if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
         const asset = response.assets[0];
-        if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE_BYTES) {
-          Alert.alert('File Too Large', 'Please select a photo smaller than 10MB.');
-          return;
+        if (asset.uri) {
+          if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE_BYTES) {
+            Alert.alert('File Too Large', 'Please select a photo smaller than 10MB.');
+            return;
+          }
+          await processAndUpload(asset.uri, targetIndex);
         }
-        await processAndUpload(asset.uri, targetIndex);
       }
     } catch (err: any) {
       Alert.alert('Camera Error', err?.message || 'Failed to capture photo.');
@@ -227,11 +229,13 @@ export const MultiDeviceInspectionCapture: React.FC<MultiDeviceInspectionCapture
 
       if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
         const asset = response.assets[0];
-        if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE_BYTES) {
-          Alert.alert('File Too Large', 'Please select a photo smaller than 10MB.');
-          return;
+        if (asset.uri) {
+          if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE_BYTES) {
+            Alert.alert('File Too Large', 'Please select a photo smaller than 10MB.');
+            return;
+          }
+          await processAndUpload(asset.uri, targetIndex);
         }
-        await processAndUpload(asset.uri, targetIndex);
       }
     } catch (err: any) {
       Alert.alert('Gallery Error', err?.message || 'Failed to select photo.');
@@ -442,7 +446,7 @@ const styles = StyleSheet.create({
   counterBadge: {
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: RADIUS.round,
+    borderRadius: RADIUS.full,
   },
   counterText: {
     color: '#FFFFFF',

@@ -110,7 +110,7 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
     [config.openingTime, config.closingTime]
   );
 
-  const fetchLiveLocation = async (isManualRefresh: boolean = false) => {
+  const fetchLiveLocation = async (isManualRefresh: boolean = false): Promise<GeoPoint | null> => {
     const reqId = ++gpsRequestIdRef.current;
     setIsLocating(true);
     setGpsError(null);
@@ -121,19 +121,21 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
         timeoutMs: 15000,
       });
 
-      if (reqId !== gpsRequestIdRef.current) return;
+      if (reqId !== gpsRequestIdRef.current) return null;
 
       setCurrentCoords(pos);
       setLastLocationUpdateTime(pos.timestamp || Date.now());
 
       const dist = calculateDistanceMeters(pos, shopCoords);
       setDistanceMeters(dist);
+      return pos;
     } catch (e: any) {
-      if (reqId !== gpsRequestIdRef.current) return;
+      if (reqId !== gpsRequestIdRef.current) return null;
       console.warn('GPS location error:', e);
       setGpsError(e.message || 'Could not acquire GPS position.');
       setCurrentCoords(null);
       setDistanceMeters(null);
+      return null;
     } finally {
       if (reqId === gpsRequestIdRef.current) {
         setIsLocating(false);
@@ -240,17 +242,33 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
         return;
       }
 
-      if (!locationState.canPunch) {
-        if (locationState.status === 'LOW_ACCURACY') {
-          showWarning('Weak GPS Signal', locationState.message);
-        } else if (locationState.status === 'OUTSIDE_GEOFENCE') {
-          showWarning('Outside Shop Area', locationState.message);
-        } else if (locationState.status === 'LOCATION_DISABLED') {
-          showWarning('Location Turned Off', locationState.message);
-        } else if (locationState.status === 'PERMISSION_DENIED') {
-          showWarning('Permission Required', locationState.message);
+      let coordsToUse = currentCoords;
+      if (!coordsToUse || !locationState.canPunch) {
+        coordsToUse = await fetchLiveLocation(true);
+      }
+
+      const activeLocState = coordsToUse
+        ? LocationService.evaluateLocationState(
+            coordsToUse,
+            shopCoords,
+            config.allowedRadiusMeters,
+            false,
+            null,
+            60
+          )
+        : locationState;
+
+      if (!activeLocState.canPunch) {
+        if (activeLocState.status === 'LOW_ACCURACY') {
+          showWarning('Weak GPS Signal', activeLocState.message);
+        } else if (activeLocState.status === 'OUTSIDE_GEOFENCE') {
+          showWarning('Outside Shop Area', activeLocState.message);
+        } else if (activeLocState.status === 'LOCATION_DISABLED') {
+          showWarning('Location Turned Off', activeLocState.message);
+        } else if (activeLocState.status === 'PERMISSION_DENIED') {
+          showWarning('Permission Required', activeLocState.message);
         } else {
-          showWarning('GPS Signal Notice', locationState.message);
+          showWarning('GPS Signal Notice', activeLocState.message);
         }
         return;
       }
@@ -330,17 +348,33 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
         return;
       }
 
-      if (!locationState.canPunch) {
-        if (locationState.status === 'LOW_ACCURACY') {
-          showWarning('Weak GPS Signal', locationState.message);
-        } else if (locationState.status === 'OUTSIDE_GEOFENCE') {
-          showWarning('Outside Shop Area', locationState.message);
-        } else if (locationState.status === 'LOCATION_DISABLED') {
-          showWarning('Location Turned Off', locationState.message);
-        } else if (locationState.status === 'PERMISSION_DENIED') {
-          showWarning('Permission Required', locationState.message);
+      let coordsToUse = currentCoords;
+      if (!coordsToUse || !locationState.canPunch) {
+        coordsToUse = await fetchLiveLocation(true);
+      }
+
+      const activeLocState = coordsToUse
+        ? LocationService.evaluateLocationState(
+            coordsToUse,
+            shopCoords,
+            config.allowedRadiusMeters,
+            false,
+            null,
+            60
+          )
+        : locationState;
+
+      if (!activeLocState.canPunch) {
+        if (activeLocState.status === 'LOW_ACCURACY') {
+          showWarning('Weak GPS Signal', activeLocState.message);
+        } else if (activeLocState.status === 'OUTSIDE_GEOFENCE') {
+          showWarning('Outside Shop Area', activeLocState.message);
+        } else if (activeLocState.status === 'LOCATION_DISABLED') {
+          showWarning('Location Turned Off', activeLocState.message);
+        } else if (activeLocState.status === 'PERMISSION_DENIED') {
+          showWarning('Permission Required', activeLocState.message);
         } else {
-          showWarning('GPS Signal Notice', locationState.message);
+          showWarning('GPS Signal Notice', activeLocState.message);
         }
         return;
       }
@@ -925,9 +959,7 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
             onPress={handlePunchIn}
             disabled={
               isPunching ||
-              (!!todayRecord?.punchInTime && !todayRecord?.punchOutTime) ||
-              isLocating ||
-              !locationState.canPunch
+              (!!todayRecord?.punchInTime && !todayRecord?.punchOutTime)
             }
             loading={isPunching}
             size="large"
@@ -941,9 +973,7 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
             disabled={
               isPunching ||
               !todayRecord?.punchInTime ||
-              !!todayRecord?.punchOutTime ||
-              isLocating ||
-              !locationState.canPunch
+              !!todayRecord?.punchOutTime
             }
             loading={isPunching}
             size="large"
@@ -1131,6 +1161,10 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
           action={faceModalAction}
           onSuccess={handleVerificationSuccess}
           onClose={() => setFaceModalVisible(false)}
+          onEnrollFace={() => {
+            setFaceModalVisible(false);
+            setFaceRecoveryModalVisible(true);
+          }}
         />
       )}
 

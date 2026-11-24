@@ -120,14 +120,16 @@ export class AttendanceService {
     };
 
     const distance = calculateDistanceMeters(coords, shopCoords);
+    const accuracyTolerance = coords.accuracy ? Math.min(Math.max(coords.accuracy * 0.4, 0), 20) : 10;
+    const effectiveRadius = shopConfig.allowedRadiusMeters + accuracyTolerance;
 
-    if (distance > shopConfig.allowedRadiusMeters) {
+    if (distance > effectiveRadius) {
       await StorageService.addAttendanceAuditLog({
         userId: user.id,
         userName: user.name,
         action: 'punch_in',
         status: 'blocked',
-        reason: `Geo-fence violation (${distance.toFixed(1)}m > ${shopConfig.allowedRadiusMeters}m)`,
+        reason: `Geo-fence violation (${distance.toFixed(1)}m > ${shopConfig.allowedRadiusMeters}m + ${accuracyTolerance.toFixed(1)}m tol)`,
         distanceMeters: distance,
       });
       return {
@@ -138,19 +140,7 @@ export class AttendanceService {
       };
     }
 
-    // 4. Attendance State Transition: Check existing today's record
-    const existingRecords = await StorageService.getAttendanceRecords(user.id);
-    const todayRecord = existingRecords.find(r => r.date === today);
-
-    if (todayRecord && todayRecord.punchInTime) {
-      return {
-        success: false,
-        message: `You have already punched in today at ${todayRecord.punchInTime}.`,
-        record: todayRecord,
-      };
-    }
-
-    // 5. Biometric Face Enrollment & Admin Approval Validation
+    // 4. Biometric Face Enrollment & Admin Approval Validation
     const bioStatus = await FaceRecognitionService.getBiometricEnrollmentStatus(user);
     if (!bioStatus.canVerify) {
       await StorageService.addAttendanceAuditLog({
@@ -163,7 +153,7 @@ export class AttendanceService {
       return { success: false, message: bioStatus.message };
     }
 
-    // 6. Cryptographic Server-Side Face Recognition Token Validation
+    // 5. Cryptographic Server-Side Face Recognition Token Validation
     const tokenValidation = await FaceRecognitionService.validateVerificationToken(
       verificationToken,
       user.id,
@@ -193,6 +183,18 @@ export class AttendanceService {
     // Single-use token consumption
     await StorageService.consumeVerificationToken(verificationToken!.tokenId);
     await StorageService.resetVerificationFailures(user.id);
+
+    // 6. Attendance State Transition: Check existing today's record
+    const existingRecords = await StorageService.getAttendanceRecords(user.id);
+    const todayRecord = existingRecords.find(r => r.date === today);
+
+    if (todayRecord && todayRecord.punchInTime) {
+      return {
+        success: false,
+        message: `You have already punched in today at ${todayRecord.punchInTime}.`,
+        record: todayRecord,
+      };
+    }
 
     // 7. Hardware Device Binding Validation
     const deviceCheck = await DeviceBindingService.checkDeviceStatus(user);
@@ -366,14 +368,16 @@ export class AttendanceService {
     };
 
     const distance = calculateDistanceMeters(coords, shopCoords);
+    const accuracyTolerance = coords.accuracy ? Math.min(Math.max(coords.accuracy * 0.4, 0), 20) : 10;
+    const effectiveRadius = shopConfig.allowedRadiusMeters + accuracyTolerance;
 
-    if (distance > shopConfig.allowedRadiusMeters) {
+    if (distance > effectiveRadius) {
       await StorageService.addAttendanceAuditLog({
         userId: user.id,
         userName: user.name,
         action: 'punch_out',
         status: 'blocked',
-        reason: `Geo-fence violation (${distance.toFixed(1)}m > ${shopConfig.allowedRadiusMeters}m)`,
+        reason: `Geo-fence violation (${distance.toFixed(1)}m > ${shopConfig.allowedRadiusMeters}m + ${accuracyTolerance.toFixed(1)}m tol)`,
         distanceMeters: distance,
       });
       return {

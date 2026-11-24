@@ -453,7 +453,17 @@ export class FaceRecognitionService {
     // Resolve latest persisted user metadata if available
     const persistedUsers = await StorageService.getAllUsers().catch(() => []);
     const persisted = persistedUsers.find(u => u.id === user.id);
-    const activeUser = persisted ? { ...user, ...persisted } : user;
+    let activeUser = user;
+    if (persisted) {
+      activeUser = { ...persisted, ...user };
+      if (
+        persisted.faceApprovedAt &&
+        (!user.faceApprovedAt || new Date(persisted.faceApprovedAt) > new Date(user.faceApprovedAt))
+      ) {
+        activeUser.faceApprovedAt = persisted.faceApprovedAt;
+        activeUser.faceEnrollmentStatus = persisted.faceEnrollmentStatus || activeUser.faceEnrollmentStatus;
+      }
+    }
 
     // 1. Explicit Administrator Rejection Check
     if (activeUser.faceEnrollmentStatus === 'rejected') {
@@ -927,9 +937,9 @@ export class FaceRecognitionService {
       };
     }
 
-    // 1. Expiration check (< 60s)
+    // 1. Expiration check (< 60s, allowing for small clock skew)
     const ageMs = Date.now() - token.timestamp;
-    if (ageMs < 0 || ageMs > BIOMETRIC_CONFIG.TOKEN_EXPIRY_MS) {
+    if (ageMs < -30000 || ageMs > BIOMETRIC_CONFIG.TOKEN_EXPIRY_MS) {
       return {
         valid: false,
         reason: 'Biometric verification token has expired (> 60s). Please verify face again.',

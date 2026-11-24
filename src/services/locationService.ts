@@ -393,8 +393,11 @@ export class LocationService {
       };
     }
 
-    // Check Geofence
-    if (distance <= allowedRadiusMeters) {
+    // Check Geofence with GPS accuracy tolerance buffer
+    const accuracyTolerance = Math.min(Math.max(accuracy * 0.4, 0), 20);
+    const effectiveRadius = allowedRadiusMeters + accuracyTolerance;
+
+    if (distance <= effectiveRadius) {
       return {
         status: 'INSIDE_GEOFENCE',
         distanceMeters: distance,

@@ -365,7 +365,6 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
     setPurAmount('');
     setPurBillUri('');
     setDeviceInspectionPhotos([]);
-    setIsUploadingDevicePhoto(false);
     setPurSignature('');
   };
 

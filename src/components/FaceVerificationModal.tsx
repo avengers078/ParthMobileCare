@@ -21,6 +21,7 @@ interface FaceVerificationModalProps {
   action: 'punch_in' | 'punch_out';
   onSuccess: (token: FaceVerificationToken) => void;
   onClose: () => void;
+  onEnrollFace?: () => void;
 }
 
 const MAX_ATTEMPTS = 3;
@@ -31,11 +32,13 @@ export const FaceVerificationModal: React.FC<FaceVerificationModalProps> = ({
   action,
   onSuccess,
   onClose,
+  onEnrollFace,
 }) => {
   const { colors } = useTheme();
   const [attempt, setAttempt] = useState(0);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [failure, setFailure] = useState('');
+  const [isNoTemplate, setIsNoTemplate] = useState(false);
   const [working, setWorking] = useState(false);
   const [showCoaching, setShowCoaching] = useState(false);
 
@@ -45,6 +48,7 @@ export const FaceVerificationModal: React.FC<FaceVerificationModalProps> = ({
       setAttempt(0);
       setFailedAttempts(0);
       setFailure('');
+      setIsNoTemplate(false);
       setWorking(false);
       setShowCoaching(false);
     }
@@ -52,15 +56,24 @@ export const FaceVerificationModal: React.FC<FaceVerificationModalProps> = ({
 
   // Coaching timer: if verification hasn't succeeded within 12 seconds, display helpful guidance
   useEffect(() => {
+    let isMounted = true;
     if (!visible || failure || working) {
       setShowCoaching(false);
       return;
     }
     setShowCoaching(false);
     const timer = setTimeout(() => {
-      setShowCoaching(true);
+      if (isMounted) {
+        setShowCoaching(true);
+      }
     }, 12000);
-    return () => clearTimeout(timer);
+    if (typeof (timer as any)?.unref === 'function') {
+      (timer as any).unref();
+    }
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [visible, attempt, failure, working]);
 
   // Protect against app backgrounding during biometric verification
@@ -100,6 +113,7 @@ export const FaceVerificationModal: React.FC<FaceVerificationModalProps> = ({
       const attemptNote = ` (${remaining} attempt${remaining === 1 ? '' : 's'} remaining)`;
 
       if (result.failureReason === 'no_template') {
+        setIsNoTemplate(true);
         setFailure('Your face profile is not registered on this device. Please complete face enrollment first.');
       } else if (
         result.failureReason === 'liveness_failed' ||
@@ -192,7 +206,18 @@ export const FaceVerificationModal: React.FC<FaceVerificationModalProps> = ({
               <Text style={[styles.failure, { color: colors.danger }]}>{failure}</Text>
             </View>
 
-            {isExhausted ? (
+            {isNoTemplate && onEnrollFace ? (
+              <TouchableOpacity
+                style={[styles.retry, { backgroundColor: colors.primary, marginTop: 8 }]}
+                onPress={() => {
+                  onClose();
+                  onEnrollFace();
+                }}
+              >
+                <ShieldCheck size={16} color="#fff" />
+                <Text style={styles.retryText}>Enroll Face on this Device</Text>
+              </TouchableOpacity>
+            ) : isExhausted ? (
               <TouchableOpacity
                 style={[styles.closeFailBtn, { backgroundColor: colors.border }]}
                 onPress={onClose}

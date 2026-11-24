@@ -69,7 +69,7 @@ interface RegisterScreenProps {
 type RegistrationStep = 'details' | 'verify_email' | 'face_enrollment' | 'submitting';
 
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) => {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { showSuccess, showError, showWarning } = useAlert();
   const {
     authStatus,
@@ -948,7 +948,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
                     <View style={styles.cameraFrame}>
                       <OnDeviceFaceAuthView
                         mode="enroll"
-                        personnelId={createdUser?.uid}
+                        personnelId={createdUser?.uid || registrationDraft?.uid || FirebaseService.getAuth().currentUser?.uid}
                         sessionKey={sessionKey}
                         onResult={handleFaceCaptureResult}
                         onClose={() => {
@@ -1203,10 +1203,31 @@ const styles = StyleSheet.create({
   },
   cameraFrame: {
     width: '100%',
-    height: 380,
+    height: 440,
     borderRadius: RADIUS.md,
     overflow: 'hidden',
     backgroundColor: '#000000',
+  },
+  cameraFinishedBox: {
+    width: '100%',
+    padding: SPACING.lg,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: SPACING.md,
+  },
+  completedTitle: {
+    ...TYPOGRAPHY.titleSmall,
+    fontWeight: '800',
+    marginTop: SPACING.sm,
+    textAlign: 'center',
+  },
+  completedText: {
+    ...TYPOGRAPHY.captionMedium,
+    marginTop: 4,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   submittingTitle: {
     ...TYPOGRAPHY.titleSmall,
