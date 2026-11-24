@@ -61,10 +61,13 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
 
   // GPS & Punch State
-  const [currentCoords, setCurrentCoords] = useState<GeoPoint | null>(null);
-  const [distanceMeters, setDistanceMeters] = useState<number | null>(null);
+  const initialKnownPos = LocationService.getLastKnownPosition();
+  const [currentCoords, setCurrentCoords] = useState<GeoPoint | null>(initialKnownPos);
+  const [distanceMeters, setDistanceMeters] = useState<number | null>(() =>
+    initialKnownPos ? calculateDistanceMeters(initialKnownPos, { latitude: config.latitude, longitude: config.longitude }) : null
+  );
   const [gpsError, setGpsError] = useState<string | null>(null);
-  const [isLocating, setIsLocating] = useState<boolean>(true);
+  const [isLocating, setIsLocating] = useState<boolean>(!initialKnownPos);
   const [lastLocationUpdateTime, setLastLocationUpdateTime] = useState<number | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const gpsRequestIdRef = useRef<number>(0);
@@ -118,7 +121,7 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
     try {
       const pos = await AttendanceService.getCurrentPosition({
         freshOnly: isManualRefresh,
-        timeoutMs: 15000,
+        timeoutMs: isManualRefresh ? 8000 : 6000,
       });
 
       if (reqId !== gpsRequestIdRef.current) return null;

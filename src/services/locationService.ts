@@ -207,6 +207,13 @@ export class LocationService {
    * 2. If satellite signal is weak/indoors, immediately try Balanced/Network provider with 10s timeout.
    * 3. Validates coordinate bounds and freshness.
    */
+  /**
+   * Returns the most recent valid GPS fix acquired during this session (if available).
+   */
+  static getLastKnownPosition(): GeoPoint | null {
+    return this.lastValidPosition;
+  }
+
   static async getCurrentLocation(options?: LocationOptions): Promise<GeoPoint> {
     // If a request is already running and freshOnly is false, share the active promise
     if (!options?.freshOnly && this.activeRequestPromise) {
@@ -230,12 +237,23 @@ export class LocationService {
     const opts: LocationOptions = {
       requirePrecise: true,
       freshOnly: isFresh,
-      timeoutMs: options?.timeoutMs ?? (isFresh ? 15000 : 12000),
-      maxAgeMs: isFresh ? 0 : (options?.maxAgeMs ?? 10000),
+      timeoutMs: options?.timeoutMs ?? (isFresh ? 8000 : 6000),
+      maxAgeMs: isFresh ? 0 : (options?.maxAgeMs ?? 15000),
       maxAllowedAccuracyMeters: options?.maxAllowedAccuracyMeters ?? 60,
       allowCachedFallback: isFresh ? false : (options?.allowCachedFallback ?? true),
       ...options,
     };
+
+    // 0. Fast-path: Return fresh cached fix immediately if available (< 60s) and freshOnly is false
+    if (opts.allowCachedFallback && !isFresh && this.lastValidPosition) {
+      const ageMs = Date.now() - (this.lastValidPosition.timestamp || 0);
+      if (ageMs < 60000) {
+        return {
+          ...this.lastValidPosition,
+          isCached: true,
+        };
+      }
+    }
 
     // 1. Verify and request permissions
     const perm = await this.requestLocationPermissions();
@@ -251,24 +269,22 @@ export class LocationService {
       return highAccPoint;
     } catch (e: any) {
       lastError = e;
-      console.warn('[LocationService] Tier 1 (High Accuracy) failed or timed out:', e?.message || e);
+      if (__DEV__) console.warn('[LocationService] Tier 1 (High Accuracy) failed or timed out:', e?.message || e);
     }
 
     // 3. Tier 2: Balanced / Network Provider Fallback (Crucial indoors where satellites cannot penetrate)
     try {
-      console.info('[LocationService] Attempting Tier 2 (Balanced/Network fallback)...');
-      const networkPoint = await this.queryProvider(false, 10000, isFresh ? 0 : 30000);
+      const networkPoint = await this.queryProvider(false, 4000, isFresh ? 0 : 30000);
       return networkPoint;
     } catch (e: any) {
       lastError = e;
-      console.warn('[LocationService] Tier 2 (Network fallback) failed:', e?.message || e);
+      if (__DEV__) console.warn('[LocationService] Tier 2 (Network fallback) failed:', e?.message || e);
     }
 
-    // 4. Tier 3: Cached Fix Fallback (Only allowed when freshOnly is false and cache < 60s old)
+    // 4. Tier 3: Cached Fix Fallback (if fix is up to 3 minutes old as emergency fallback)
     if (opts.allowCachedFallback && !isFresh && this.lastValidPosition) {
       const ageMs = Date.now() - (this.lastValidPosition.timestamp || 0);
-      if (ageMs < 60000) {
-        console.info(`[LocationService] Using valid recent location cache (${Math.round(ageMs / 1000)}s old).`);
+      if (ageMs < 180000) {
         return {
           ...this.lastValidPosition,
           isCached: true,

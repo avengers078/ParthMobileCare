@@ -29,8 +29,9 @@ const NotificationsScreen = React.lazy(() => import('../screens/NotificationsScr
 const LazyFallback = () => {
   const { colors } = useTheme();
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, gap: 12 }}>
       <ActivityIndicator size="small" color={colors.primary} />
+      <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '500' }}>Loading...</Text>
     </View>
   );
 };
@@ -202,6 +203,19 @@ const MainTabs: React.FC = React.memo(() => {
 export const RootNavigator: React.FC = () => {
   const { currentUser, authStatus, isLoading, authError, retryAuth, logout, restartRegistration } = useAuth();
   const { colors } = useTheme();
+
+  React.useEffect(() => {
+    // Preload primary screens in background after initial paint so tab switches are instant
+    const timer = setTimeout(() => {
+      import('../screens/LeadListScreen').catch(() => {});
+      import('../screens/PriceListScreen').catch(() => {});
+      import('../screens/ProfileScreen').catch(() => {});
+      import('../screens/AttendanceScreen').catch(() => {});
+      import('../screens/SecondHandScreen').catch(() => {});
+      import('../screens/NotificationsScreen').catch(() => {});
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (isLoading) {
     return (
