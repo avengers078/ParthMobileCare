@@ -70,6 +70,32 @@ describe('Admin Dashboard Cloudinary Service', () => {
     expect(res.secureUrl).toBe(mockResponse.secure_url);
   });
 
+  it('successfully uploads Aadhaar card KYC document to Cloudinary and returns secureUrl and publicId', async () => {
+    CloudinaryService.configure({ cloudName: 'demo_store', uploadPreset: 'demo_preset' });
+    const mockKycResponse = {
+      secure_url: 'https://res.cloudinary.com/demo_store/image/upload/v1/kyc/pmc_aadhaar_front.jpg',
+      public_id: 'parth_mobile_care/kyc/pmc_aadhaar_front',
+      format: 'jpg',
+      bytes: 220000,
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue(mockKycResponse),
+    } as any);
+
+    const blob = new Blob(['sample-aadhaar-front'], { type: 'image/jpeg' });
+    const res = await CloudinaryService.uploadKycDocument(blob, {
+      folder: 'kyc',
+      tags: ['pmc_kyc', 'aadhaar_front'],
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.secureUrl).toBe(mockKycResponse.secure_url);
+    expect(res.publicId).toBe(mockKycResponse.public_id);
+  });
+
   it('generates auto-format and auto-quality delivery transformation URLs', () => {
     const url = 'https://res.cloudinary.com/parthmobilecare/image/upload/v1/devices/phone.jpg';
     const thumb = CloudinaryService.getDeviceThumbnailUrl(url);

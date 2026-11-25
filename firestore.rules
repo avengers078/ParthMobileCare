@@ -404,7 +404,8 @@ service cloud.firestore {
         'aadhaarNumber', 'aadhaarFrontUri', 'aadhaarBackUri', 'aadhaarPhotoFront',
         'aadhaarPhotoBack', 'aadhaarCardPhotoUri', 'customerPhotoUri',
         'billImageUri', 'digitalSignatureUri', 'createdAt', 'recordedAt',
-        'recordedByStaffId', 'recordedByStaffName', '_syncedAt'
+        'recordedByStaffId', 'recordedByStaffName', '_syncedAt',
+        'aadhaarFrontPublicId', 'aadhaarBackPublicId'
       ];
       let required = ['id', 'purchaseId', 'customerName', 'phone', 'address', 'aadhaarNumber', 'recordedByStaffId', 'recordedByStaffName'];
 
@@ -422,6 +423,8 @@ service cloud.firestore {
              isValidOptionalString('aadhaarPhotoFront', data, 0, 500000) &&
              isValidOptionalString('aadhaarPhotoBack', data, 0, 500000) &&
              isValidOptionalString('aadhaarCardPhotoUri', data, 0, 500000) &&
+             isValidOptionalString('aadhaarFrontPublicId', data, 0, 500) &&
+             isValidOptionalString('aadhaarBackPublicId', data, 0, 500) &&
              isValidOptionalString('customerPhotoUri', data, 0, 500000) &&
              isValidOptionalString('billImageUri', data, 0, 500000) &&
              isValidOptionalString('digitalSignatureUri', data, 0, 500000) &&
@@ -480,7 +483,8 @@ service cloud.firestore {
       let allowed = [
         'id', 'saleId', 'buyerName', 'phone', 'alternatePhone', 'address',
         'aadhaarNumber', 'aadhaarPhotoUri', 'buyerPhotoUri', 'digitalSignatureUri',
-        'recordedByStaffId', 'recordedByStaffName', 'recordedAt', 'createdAt', '_syncedAt'
+        'recordedByStaffId', 'recordedByStaffName', 'recordedAt', 'createdAt', '_syncedAt',
+        'aadhaarPhotoPublicId'
       ];
       let required = ['id', 'saleId', 'buyerName', 'phone', 'address', 'aadhaarNumber', 'recordedByStaffId', 'recordedByStaffName'];
 
@@ -494,6 +498,7 @@ service cloud.firestore {
              isValidString(data.address, 1, 250) &&
              isValidString(data.aadhaarNumber, 4, 20) &&
              isValidOptionalString('aadhaarPhotoUri', data, 0, 500000) &&
+             isValidOptionalString('aadhaarPhotoPublicId', data, 0, 500) &&
              isValidOptionalString('buyerPhotoUri', data, 0, 500000) &&
              isValidOptionalString('digitalSignatureUri', data, 0, 500000) &&
              isValidString(data.recordedByStaffId, 1, 100) &&

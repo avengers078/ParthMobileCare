@@ -182,8 +182,11 @@ export interface SecondHandKycRecord {
   alternatePhone?: string;
   address: string;
   aadhaarNumber: string;
+  rawAadhaarNumber?: string;
   aadhaarFrontUri?: string;
   aadhaarBackUri?: string;
+  aadhaarFrontPublicId?: string;
+  aadhaarBackPublicId?: string;
   customerPhotoUri?: string;
   billImageUri?: string;
   digitalSignatureUri: string;
@@ -200,8 +203,11 @@ export interface SecondHandPurchase {
   alternatePhone?: string;
   address?: string;
   aadhaarNumber?: string;
+  rawAadhaarNumber?: string;
   aadhaarFrontUri?: string;
   aadhaarBackUri?: string;
+  aadhaarFrontPublicId?: string;
+  aadhaarBackPublicId?: string;
   customerPhotoUri?: string;
   brand: string;
   model: string;
@@ -232,7 +238,9 @@ export interface SecondHandSale {
   alternatePhone?: string;
   address: string;
   aadhaarNumber?: string;
+  rawAadhaarNumber?: string;
   aadhaarPhotoUri?: string;
+  aadhaarPhotoPublicId?: string;
   buyerPhotoUri?: string;
   brand: string;
   model: string;
@@ -265,7 +273,9 @@ export interface SecondHandSaleKycRecord {
   alternatePhone?: string;
   address: string;
   aadhaarNumber: string;
+  rawAadhaarNumber?: string;
   aadhaarPhotoUri?: string;
+  aadhaarPhotoPublicId?: string;
   buyerPhotoUri?: string;
   digitalSignatureUri?: string;
   recordedByStaffId: string;

@@ -101,9 +101,12 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
   const [buyerAddress, setBuyerAddress] = useState('');
   const [buyerAadhaar, setBuyerAadhaar] = useState('');
   const [buyerPhotoUri, setBuyerPhotoUri] = useState('');
+  const [buyerAadhaarPhotoUri, setBuyerAadhaarPhotoUri] = useState('');
   const [saleAmount, setSaleAmount] = useState('');
   const [salePaymentMethod, setSalePaymentMethod] = useState<'UPI' | 'Cash' | 'Card'>('UPI');
   const [saleSignature, setSaleSignature] = useState('');
+  const [isSavingPurchase, setIsSavingPurchase] = useState(false);
+  const [isSavingSale, setIsSavingSale] = useState(false);
 
   const loadData = useCallback(async () => {
     const [pList, sList] = await Promise.all([
@@ -189,7 +192,46 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
     if (!currentUser) return;
 
     try {
-      // If bill was uploaded, ensure it is stored on Cloudinary if configured
+      setIsSavingPurchase(true);
+
+      // 1. Upload Aadhaar Front & Back Photos to Cloudinary KYC storage
+      let finalAadhaarFrontUri = aadhaarFrontUri;
+      let finalAadhaarBackUri = aadhaarBackUri;
+      let finalAadhaarFrontPublicId: string | undefined = undefined;
+      let finalAadhaarBackPublicId: string | undefined = undefined;
+
+      if (CloudinaryService.isConfigured()) {
+        if (aadhaarFrontUri && !CloudinaryService.isCloudinaryUrl(aadhaarFrontUri)) {
+          try {
+            const frontUpload = await CloudinaryService.uploadKycDocument(aadhaarFrontUri, {
+              folder: 'kyc',
+              tags: ['pmc_kyc', 'aadhaar_front', purBrand],
+            });
+            if (frontUpload.success && frontUpload.secureUrl) {
+              finalAadhaarFrontUri = frontUpload.secureUrl;
+              finalAadhaarFrontPublicId = frontUpload.publicId;
+            }
+          } catch (uploadErr) {
+            if (__DEV__) console.warn('[SecondHandScreen] Aadhaar front upload error:', uploadErr);
+          }
+        }
+        if (aadhaarBackUri && !CloudinaryService.isCloudinaryUrl(aadhaarBackUri)) {
+          try {
+            const backUpload = await CloudinaryService.uploadKycDocument(aadhaarBackUri, {
+              folder: 'kyc',
+              tags: ['pmc_kyc', 'aadhaar_back', purBrand],
+            });
+            if (backUpload.success && backUpload.secureUrl) {
+              finalAadhaarBackUri = backUpload.secureUrl;
+              finalAadhaarBackPublicId = backUpload.publicId;
+            }
+          } catch (uploadErr) {
+            if (__DEV__) console.warn('[SecondHandScreen] Aadhaar back upload error:', uploadErr);
+          }
+        }
+      }
+
+      // 2. If bill was uploaded, ensure it is stored on Cloudinary if configured
       let finalBillUri: string | undefined = undefined;
       if (purBillUri) {
         if (CloudinaryService.isCloudinaryUrl(purBillUri)) {
@@ -217,11 +259,13 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
           address: custAddress.trim() || 'Local Customer',
           aadhaarNumber: custAadhaar.trim() || 'Verified on Shop',
           customerPhotoUri: custPhotoUri || undefined,
-          aadhaarFrontUri: aadhaarFrontUri,
-          aadhaarBackUri: aadhaarBackUri,
-          aadhaarPhotoFront: aadhaarFrontUri,
-          aadhaarPhotoBack: aadhaarBackUri,
-          aadhaarCardPhotoUri: aadhaarFrontUri,
+          aadhaarFrontUri: finalAadhaarFrontUri,
+          aadhaarBackUri: finalAadhaarBackUri,
+          aadhaarPhotoFront: finalAadhaarFrontUri,
+          aadhaarPhotoBack: finalAadhaarBackUri,
+          aadhaarCardPhotoUri: finalAadhaarFrontUri,
+          aadhaarFrontPublicId: finalAadhaarFrontPublicId,
+          aadhaarBackPublicId: finalAadhaarBackPublicId,
           brand: purBrand,
           model: purModel.trim(),
           imei: purImei.trim(),
@@ -242,6 +286,8 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
       );
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to record purchase.');
+    } finally {
+      setIsSavingPurchase(false);
     }
   };
 
@@ -281,6 +327,26 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
     if (!currentUser) return;
 
     try {
+      setIsSavingSale(true);
+
+      // Cloudinary upload for Buyer Aadhaar Photo if captured
+      let finalBuyerAadhaarPhotoUri = buyerAadhaarPhotoUri;
+      let finalBuyerAadhaarPublicId: string | undefined = undefined;
+      if (buyerAadhaarPhotoUri && CloudinaryService.isConfigured() && !CloudinaryService.isCloudinaryUrl(buyerAadhaarPhotoUri)) {
+        try {
+          const buyerUpload = await CloudinaryService.uploadKycDocument(buyerAadhaarPhotoUri, {
+            folder: 'kyc',
+            tags: ['pmc_kyc', 'buyer_aadhaar', selectedStockItem.brand],
+          });
+          if (buyerUpload.success && buyerUpload.secureUrl) {
+            finalBuyerAadhaarPhotoUri = buyerUpload.secureUrl;
+            finalBuyerAadhaarPublicId = buyerUpload.publicId;
+          }
+        } catch (uploadErr) {
+          if (__DEV__) console.warn('[SecondHandScreen] Buyer Aadhaar photo upload error:', uploadErr);
+        }
+      }
+
       const recordedSale = await SecondHandService.recordSale(
         {
           purchaseRecordId: selectedStockItem.id,
@@ -290,6 +356,8 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
           address: buyerAddress.trim() || 'Local Customer',
           aadhaarNumber: buyerAadhaar.trim() || 'Verified by Store',
           buyerPhotoUri: buyerPhotoUri || undefined,
+          aadhaarPhotoUri: finalBuyerAadhaarPhotoUri || undefined,
+          aadhaarPhotoPublicId: finalBuyerAadhaarPublicId || undefined,
           brand: selectedStockItem.brand,
           model: selectedStockItem.model,
           imei: selectedStockItem.imei,
@@ -322,6 +390,8 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
       loadData();
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to record sale.');
+    } finally {
+      setIsSavingSale(false);
     }
   };
 
@@ -378,6 +448,7 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
     setBuyerAddress('');
     setBuyerAadhaar('');
     setBuyerPhotoUri('');
+    setBuyerAadhaarPhotoUri('');
     setSaleAmount('');
     setSaleSignature('');
   };
@@ -891,8 +962,9 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
         />
 
         <PrimaryButton
-          title="✓ Record Purchase to Inventory"
+          title={isSavingPurchase ? 'Uploading KYC & Saving...' : '✓ Record Purchase to Inventory'}
           onPress={handleRecordPurchase}
+          loading={isSavingPurchase}
           size="large"
           style={{ marginTop: SPACING.lg }}
         />
@@ -986,6 +1058,7 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
         <Input label="Aadhaar Number (12 Digits)" placeholder="Aadhaar number" keyboardType="numeric" maxLength={12} value={buyerAadhaar} onChangeText={setBuyerAadhaar} />
 
         <DocumentCapture label="Buyer Photo (Optional)" onCapture={setBuyerPhotoUri} currentUri={buyerPhotoUri} />
+        <DocumentCapture label="Buyer Aadhaar Card Photo (Optional)" onCapture={setBuyerAadhaarPhotoUri} currentUri={buyerAadhaarPhotoUri} />
 
         <Text style={[styles.subSectionTitle, { color: colors.primary, marginTop: SPACING.md }]}>
           3. Financials & Payment
@@ -1031,8 +1104,9 @@ export const SecondHandScreen: React.FC<{ navigation?: any }> = ({ navigation })
         />
 
         <PrimaryButton
-          title="✓ Complete Sale & Generate Invoice"
+          title={isSavingSale ? 'Completing Sale...' : '✓ Complete Sale & Generate Invoice'}
           onPress={handleRecordSale}
+          loading={isSavingSale}
           size="large"
           style={{ marginTop: SPACING.lg }}
         />

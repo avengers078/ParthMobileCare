@@ -33,6 +33,7 @@ export class SecondHandService {
       ...data,
       id: `pur_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       aadhaarNumber: maskedAadhaar,
+      rawAadhaarNumber: rawAadhaar,
       purchaseDate,
       purchaseTime,
       purchasedByStaffId: currentUser.id,
@@ -76,9 +77,15 @@ export class SecondHandService {
         ? Math.round((profitAmount / data.purchaseAmount) * 1000) / 10
         : 0;
 
+    const rawAadhaar = data.aadhaarNumber || '';
+    const cleanDigits = rawAadhaar.replace(/[^0-9]/g, '');
+    const maskedAadhaar = cleanDigits.length >= 4 ? `XXXX-XXXX-${cleanDigits.slice(-4)}` : (rawAadhaar.startsWith('XXXX') ? rawAadhaar : (rawAadhaar || 'XXXX-XXXX-XXXX'));
+
     const newSale: SecondHandSale = {
       ...data,
       id: `sale_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      aadhaarNumber: maskedAadhaar,
+      rawAadhaarNumber: rawAadhaar,
       profitAmount,
       marginPercent,
       invoiceNumber,

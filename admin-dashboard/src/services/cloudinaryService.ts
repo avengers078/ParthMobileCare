@@ -20,12 +20,13 @@ export interface CloudinaryConfig {
 }
 
 export interface CloudinaryUploadOptions {
-  folder?: 'devices' | 'leads' | 'avatars' | 'general';
+  folder?: 'devices' | 'leads' | 'avatars' | 'general' | 'kyc';
   tags?: string[];
   maxSizeBytes?: number;
   allowedFormats?: string[];
   onProgress?: (percent: number) => void;
   metadata?: Record<string, string>;
+  allowKycDocument?: boolean;
 }
 
 export interface CloudinaryUploadResult {
@@ -67,9 +68,10 @@ export const ALLOWED_IMAGE_MIME_TYPES = [
   'image/heic',
 ];
 
-// Keywords that indicate sensitive biometric or KYC payload
-const FORBIDDEN_CONTENT_KEYWORDS = [
-  'face',
+// Biometric keywords that are ALWAYS strictly forbidden under any circumstances
+const FORBIDDEN_BIOMETRIC_KEYWORDS = [
+  'face_embedding',
+  'face_vector',
   'biometric',
   'embedding',
   'descriptor',
@@ -80,6 +82,10 @@ const FORBIDDEN_CONTENT_KEYWORDS = [
   'template',
   'keystore',
   'dek',
+];
+
+// Keywords indicating identity KYC (blocked on standard non-KYC uploads)
+const FORBIDDEN_KYC_KEYWORDS = [
   'aadhaar',
   'aadhar',
   'pan_card',
@@ -117,9 +123,46 @@ export class CloudinaryService {
     return { ...this.config };
   }
 
-  static isSensitiveOrBiometricPayload(descriptorOrName: string, tags?: string[]): boolean {
+  /**
+   * Strict validation check preventing sensitive or biometric data upload.
+   * If allowKycDocument is explicitly true (for Buy & Sell verification),
+   * identity documents like Aadhaar are permitted while biometric templates/keys remain strictly blocked.
+   */
+  static isSensitiveOrBiometricPayload(
+    descriptorOrName: string,
+    tags?: string[],
+    allowKycDocument?: boolean
+  ): boolean {
     const target = `${descriptorOrName || ''} ${(tags || []).join(' ')}`.toLowerCase();
-    return FORBIDDEN_CONTENT_KEYWORDS.some((kw) => target.includes(kw));
+
+    // Biometric templates, vector descriptors, face embeddings, and encryption keys are ALWAYS forbidden
+    if (FORBIDDEN_BIOMETRIC_KEYWORDS.some((kw) => target.includes(kw))) {
+      return true;
+    }
+
+    // KYC identity documents (Aadhaar, PAN, voter ID) blocked on standard non-KYC uploads
+    if (!allowKycDocument && FORBIDDEN_KYC_KEYWORDS.some((kw) => target.includes(kw))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Upload customer/buyer KYC document (such as Aadhaar card photos) for second-hand verification.
+   * Securely stores on Cloudinary and returns CDN URL and Cloudinary Public ID.
+   * Biometric templates, vectors, embeddings, and encryption keys remain strictly prohibited.
+   */
+  static async uploadKycDocument(
+    fileSource: File | Blob | string,
+    options: Omit<CloudinaryUploadOptions, 'allowKycDocument'> = {}
+  ): Promise<CloudinaryUploadResult> {
+    return this.uploadImage(fileSource, {
+      ...options,
+      folder: options.folder || 'kyc',
+      allowKycDocument: true,
+      tags: options.tags || ['pmc_kyc', 'document'],
+    });
   }
 
   static validateImageMeta(
@@ -172,7 +215,7 @@ export class CloudinaryService {
     const tags = options.tags || ['pmc_retail', folder];
 
     const descriptorToCheck = typeof fileSource === 'string' ? fileSource : (fileSource as File).name || '';
-    if (this.isSensitiveOrBiometricPayload(descriptorToCheck, tags)) {
+    if (this.isSensitiveOrBiometricPayload(descriptorToCheck, tags, options.allowKycDocument)) {
       const securityError =
         'Security Violation: Biometric face data and sensitive KYC identity documents must never be uploaded to Cloudinary.';
       console.error('[CloudinaryService] Blocked illegal upload attempt:', securityError);

@@ -36,7 +36,7 @@ import {
 } from '../components/common';
 import { useAuth } from '../context/AuthContext';
 import { generateSaleInvoicePdf, numberToWordsIndian } from '../utils/exportUtils';
-import { SecondHandPurchase, SecondHandSale, ShopConfig, SecondHandKycRecord } from '../types';
+import { SecondHandPurchase, SecondHandSale, ShopConfig, SecondHandKycRecord, SecondHandSaleKycRecord } from '../types';
 import { NavigationParams } from '../utils/notificationRouter';
 
 interface SecondHandPageProps {
@@ -64,17 +64,28 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
   const [viewPurchase, setViewPurchase] = useState<SecondHandPurchase | null>(null);
   const [viewPurchaseKyc, setViewPurchaseKyc] = useState<SecondHandKycRecord | null>(null);
   const [viewSale, setViewSale] = useState<SecondHandSale | null>(null);
+  const [viewSaleKyc, setViewSaleKyc] = useState<SecondHandSaleKycRecord | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; title: string; publicId?: string } | null>(null);
 
   const handleOpenPurchaseDetails = async (p: SecondHandPurchase) => {
     setViewPurchase(p);
     setViewPurchaseKyc(null);
-    if (p.hasSensitiveKyc || !p.aadhaarNumber) {
-      try {
-        const kyc = await ApiService.getSecondHandPurchaseKyc(p.id);
-        setViewPurchaseKyc(kyc);
-      } catch (e) {
-        console.warn('Could not load KYC for purchase:', e);
-      }
+    try {
+      const kyc = await ApiService.getSecondHandPurchaseKyc(p.id);
+      setViewPurchaseKyc(kyc);
+    } catch (e) {
+      console.warn('Could not load KYC for purchase:', e);
+    }
+  };
+
+  const handleOpenSaleDetails = async (s: SecondHandSale) => {
+    setViewSale(s);
+    setViewSaleKyc(null);
+    try {
+      const kyc = await ApiService.getSecondHandSaleKyc(s.id);
+      setViewSaleKyc(kyc);
+    } catch (e) {
+      console.warn('Could not load KYC for sale:', e);
     }
   };
 
@@ -111,6 +122,9 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [purchaseFrontFile, setPurchaseFrontFile] = useState<File | null>(null);
+  const [purchaseBackFile, setPurchaseBackFile] = useState<File | null>(null);
+  const [saleAadhaarFile, setSaleAadhaarFile] = useState<File | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -145,7 +159,7 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
       if (targetId) {
         const target = sales.find(s => s.id === targetId || s.invoiceNumber === targetId);
         if (target) {
-          setViewSale(target);
+          handleOpenSaleDetails(target);
           onClearParams?.();
         } else if (sales.length > 0) {
           showError(new Error('Record unavailable'), 'This record is no longer available.');
@@ -193,12 +207,53 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
     try {
       const now = new Date();
       const id = `purchase_${Date.now()}`;
+
+      let aadhaarFrontUri: string | undefined = undefined;
+      let aadhaarBackUri: string | undefined = undefined;
+      let aadhaarFrontPublicId: string | undefined = undefined;
+      let aadhaarBackPublicId: string | undefined = undefined;
+
+      if (purchaseFrontFile) {
+        try {
+          const res = await CloudinaryService.uploadKycDocument(purchaseFrontFile, {
+            folder: 'kyc',
+            tags: ['pmc_kyc', 'aadhaar_front', purchaseForm.brand],
+          });
+          if (res.success && res.secureUrl) {
+            aadhaarFrontUri = res.secureUrl;
+            aadhaarFrontPublicId = res.publicId;
+          }
+        } catch (err) {
+          console.warn('[Admin] Front Aadhaar upload error:', err);
+        }
+      }
+
+      if (purchaseBackFile) {
+        try {
+          const res = await CloudinaryService.uploadKycDocument(purchaseBackFile, {
+            folder: 'kyc',
+            tags: ['pmc_kyc', 'aadhaar_back', purchaseForm.brand],
+          });
+          if (res.success && res.secureUrl) {
+            aadhaarBackUri = res.secureUrl;
+            aadhaarBackPublicId = res.publicId;
+          }
+        } catch (err) {
+          console.warn('[Admin] Back Aadhaar upload error:', err);
+        }
+      }
+
       const payload: SecondHandPurchase = {
         id,
         customerName: purchaseForm.customerName.trim(),
         phone: purchaseForm.phone.trim(),
         address: purchaseForm.address.trim(),
         aadhaarNumber: purchaseForm.aadhaarNumber.trim(),
+        rawAadhaarNumber: purchaseForm.aadhaarNumber.trim(),
+        aadhaarFrontUri,
+        aadhaarBackUri,
+        aadhaarFrontPublicId,
+        aadhaarBackPublicId,
         brand: purchaseForm.brand,
         model: purchaseForm.model.trim(),
         ram: purchaseForm.ram,
@@ -216,6 +271,8 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
 
       await ApiService.saveSecondHandPurchase(payload);
       showSuccess(`Recorded purchase of ${purchaseForm.brand} ${purchaseForm.model} into inventory.`);
+      setPurchaseFrontFile(null);
+      setPurchaseBackFile(null);
       setAddPurchaseModalOpen(false);
       await loadData();
     } catch (err: any) {
@@ -249,6 +306,24 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
       );
       const purchaseRecordId = saleForm.purchaseRecordId || inStockMatch?.id;
 
+      let aadhaarPhotoUri: string | undefined = undefined;
+      let aadhaarPhotoPublicId: string | undefined = undefined;
+
+      if (saleAadhaarFile) {
+        try {
+          const res = await CloudinaryService.uploadKycDocument(saleAadhaarFile, {
+            folder: 'kyc',
+            tags: ['pmc_kyc', 'buyer_aadhaar', saleForm.brand],
+          });
+          if (res.success && res.secureUrl) {
+            aadhaarPhotoUri = res.secureUrl;
+            aadhaarPhotoPublicId = res.publicId;
+          }
+        } catch (err) {
+          console.warn('[Admin] Buyer Aadhaar upload error:', err);
+        }
+      }
+
       const payload: SecondHandSale = {
         id,
         purchaseRecordId,
@@ -256,6 +331,9 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
         phone: saleForm.phone.trim(),
         address: saleForm.address.trim(),
         aadhaarNumber: saleForm.aadhaarNumber.trim(),
+        rawAadhaarNumber: saleForm.aadhaarNumber.trim(),
+        aadhaarPhotoUri,
+        aadhaarPhotoPublicId,
         brand: saleForm.brand,
         model: saleForm.model.trim(),
         imei: saleForm.imei.trim(),
@@ -274,6 +352,7 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
       };
 
       await ApiService.saveSecondHandSale(payload);
+      setSaleAadhaarFile(null);
 
       // If matched with in_stock purchase, update status to sold
       const matchedPurchase = purchases.find(p => p.imei === saleForm.imei && p.status === 'in_stock');
@@ -657,8 +736,8 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
                         />
                         <ActionButton
                           icon={Eye}
-                          label="View Sale Details"
-                          onClick={() => setViewSale(s)}
+                          label="View Sale & KYC Details"
+                          onClick={() => handleOpenSaleDetails(s)}
                           variant="ghost"
                         />
                       </div>
@@ -772,6 +851,31 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
             onChange={e => setPurchaseForm({ ...purchaseForm, aadhaarNumber: e.target.value })}
             placeholder="12-digit Aadhaar number for KYC records"
           />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Aadhaar Front Photo (Cloudinary)
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={e => setPurchaseFrontFile(e.target.files?.[0] || null)}
+                className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Aadhaar Back Photo (Cloudinary)
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={e => setPurchaseBackFile(e.target.files?.[0] || null)}
+                className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+            </div>
+          </div>
 
           <div className="flex justify-end space-x-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button
@@ -920,6 +1024,18 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
             />
           </div>
 
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-700/80">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              Buyer Aadhaar Card Photo (Cloudinary)
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => setSaleAadhaarFile(e.target.files?.[0] || null)}
+              className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+          </div>
+
           <div className="flex justify-end space-x-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button
               variant="outline"
@@ -979,17 +1095,129 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
               </div>
               <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
                 <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center space-x-1">
-                  <Lock className="w-3 h-3 text-amber-500" />
-                  <span>Confidential KYC</span>
+                  <Shield className="w-3 h-3 text-blue-600" />
+                  <span>Aadhaar Card Number</span>
                 </span>
-                <p className="font-mono text-xs mt-0.5 font-bold">
-                  {maskAadhaar(viewPurchaseKyc?.aadhaarNumber || viewPurchase.aadhaarNumber)}
-                </p>
+                <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <p className="font-mono text-xs font-extrabold text-slate-900 dark:text-white tracking-wide">
+                    {viewPurchaseKyc?.rawAadhaarNumber || viewPurchaseKyc?.aadhaarNumber || viewPurchase.rawAadhaarNumber || viewPurchase.aadhaarNumber || 'Not Provided'}
+                  </p>
+                  {(viewPurchaseKyc?.rawAadhaarNumber || viewPurchaseKyc?.aadhaarNumber || viewPurchase.rawAadhaarNumber || viewPurchase.aadhaarNumber) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const raw = (viewPurchaseKyc?.rawAadhaarNumber || viewPurchaseKyc?.aadhaarNumber || viewPurchase.rawAadhaarNumber || viewPurchase.aadhaarNumber || '').replace(/\s+/g, '');
+                        navigator.clipboard.writeText(raw);
+                        showSuccess('Aadhaar number copied to clipboard');
+                      }}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-200/60 dark:bg-slate-700/60 hover:bg-slate-200"
+                      title="Copy Aadhaar Number"
+                    >
+                      Copy
+                    </button>
+                  )}
+                </div>
                 <span className="text-[10px] font-semibold text-emerald-600">
-                  Protected under Firestore Rules KYC Isolation
+                  Verified Seller KYC • Cloudinary Stored
                 </span>
               </div>
             </div>
+
+            {/* Customer Aadhaar Card Photos (Front & Back) */}
+            {(() => {
+              const frontUri = viewPurchaseKyc?.aadhaarFrontUri || viewPurchase.aadhaarFrontUri || (viewPurchaseKyc as any)?.aadhaarPhotoFront || (viewPurchase as any)?.aadhaarPhotoFront || (viewPurchaseKyc as any)?.aadhaarCardPhotoUri || (viewPurchase as any)?.aadhaarCardPhotoUri;
+              const backUri = viewPurchaseKyc?.aadhaarBackUri || viewPurchase.aadhaarBackUri || (viewPurchaseKyc as any)?.aadhaarPhotoBack || (viewPurchase as any)?.aadhaarPhotoBack;
+              const frontPublicId = viewPurchaseKyc?.aadhaarFrontPublicId || viewPurchase.aadhaarFrontPublicId;
+              const backPublicId = viewPurchaseKyc?.aadhaarBackPublicId || viewPurchase.aadhaarBackPublicId;
+
+              return (
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-blue-600" />
+                      Customer Aadhaar Card Photos (Front & Back)
+                    </span>
+                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-900">
+                      Cloudinary CDN & Firebase ID
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Front Photo */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-slate-500">Aadhaar Front Side</span>
+                        {frontPublicId && (
+                          <span className="text-[9px] font-mono text-slate-400 truncate max-w-[130px]" title={frontPublicId}>
+                            ID: {frontPublicId.split('/').pop()}
+                          </span>
+                        )}
+                      </div>
+                      {frontUri ? (
+                        <div
+                          onClick={() => setPreviewPhoto({ url: frontUri, title: `${viewPurchase.customerName || 'Customer'} - Aadhaar Front Side`, publicId: frontPublicId })}
+                          className="group relative aspect-[16/10] rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 cursor-pointer hover:border-blue-500 transition-all shadow-sm"
+                        >
+                          <img
+                            src={frontUri}
+                            alt="Aadhaar Front Side"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-1">
+                            <Eye className="w-4 h-4" />
+                            <span>Inspect Full Photo</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="aspect-[16/10] rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 text-xs p-3 text-center bg-white dark:bg-slate-800/40">
+                          <Shield className="w-5 h-5 mb-1 text-slate-300 dark:text-slate-600" />
+                          <span>Front photo not recorded</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Back Photo */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-slate-500">Aadhaar Back Side</span>
+                        {backPublicId && (
+                          <span className="text-[9px] font-mono text-slate-400 truncate max-w-[130px]" title={backPublicId}>
+                            ID: {backPublicId.split('/').pop()}
+                          </span>
+                        )}
+                      </div>
+                      {backUri ? (
+                        <div
+                          onClick={() => setPreviewPhoto({ url: backUri, title: `${viewPurchase.customerName || 'Customer'} - Aadhaar Back Side`, publicId: backPublicId })}
+                          className="group relative aspect-[16/10] rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 cursor-pointer hover:border-blue-500 transition-all shadow-sm"
+                        >
+                          <img
+                            src={backUri}
+                            alt="Aadhaar Back Side"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-bold gap-1">
+                            <Eye className="w-4 h-4" />
+                            <span>Inspect Full Photo</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="aspect-[16/10] rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 text-xs p-3 text-center bg-white dark:bg-slate-800/40">
+                          <Shield className="w-5 h-5 mb-1 text-slate-300 dark:text-slate-600" />
+                          <span>Back photo not recorded</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Device Inspection Photos Gallery */}
             {(() => {
@@ -1075,7 +1303,10 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
       {/* View Sale Modal / Interactive Tax Invoice Preview */}
       <Modal
         isOpen={Boolean(viewSale)}
-        onClose={() => setViewSale(null)}
+        onClose={() => {
+          setViewSale(null);
+          setViewSaleKyc(null);
+        }}
         title="Tax Invoice / Sales Receipt"
         subtitle={viewSale && <span>Invoice No: {viewSale.invoiceNumber}</span>}
         size="3xl"
@@ -1114,6 +1345,104 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
                 </Button>
               </div>
             </div>
+
+            {/* Buyer KYC & Aadhaar Verification Section for Admin */}
+            {(() => {
+              const buyerAadhaarNum = viewSaleKyc?.rawAadhaarNumber || viewSaleKyc?.aadhaarNumber || viewSale.rawAadhaarNumber || viewSale.aadhaarNumber;
+              const buyerAadhaarPhoto = viewSaleKyc?.aadhaarPhotoUri || viewSale.aadhaarPhotoUri;
+              const buyerPhoto = viewSaleKyc?.buyerPhotoUri || viewSale.buyerPhotoUri;
+              const buyerAadhaarPublicId = viewSaleKyc?.aadhaarPhotoPublicId || viewSale.aadhaarPhotoPublicId;
+
+              return (
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                      Buyer KYC & Aadhaar Verification
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                      Cloudinary Stored • Firebase Indexed
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Buyer Aadhaar Number</span>
+                      <div className="flex items-center justify-between gap-1 mt-0.5">
+                        <p className="font-mono text-xs font-extrabold text-slate-900 dark:text-white">
+                          {buyerAadhaarNum || 'Verified by Store'}
+                        </p>
+                        {buyerAadhaarNum && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(buyerAadhaarNum.replace(/\s+/g, ''));
+                              showSuccess('Buyer Aadhaar copied');
+                            }}
+                            className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800"
+                            title="Copy Aadhaar"
+                          >
+                            Copy
+                          </button>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-400 mt-1 block">Full Unmasked Identity Proof</span>
+                    </div>
+
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 sm:col-span-2">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                        Buyer Aadhaar Photo & Identification
+                      </span>
+                      <div className="flex items-center gap-3">
+                        {buyerAadhaarPhoto ? (
+                          <div
+                            onClick={() => setPreviewPhoto({ url: buyerAadhaarPhoto, title: `${viewSale.buyerName} - Buyer Aadhaar Card`, publicId: buyerAadhaarPublicId })}
+                            className="group relative h-16 aspect-[16/10] rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 cursor-pointer bg-slate-100 dark:bg-slate-800 hover:border-emerald-500 transition-all shrink-0"
+                          >
+                            <img src={buyerAadhaarPhoto} alt="Buyer Aadhaar" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[9px] font-bold">
+                              Inspect
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="h-16 aspect-[16/10] rounded-lg border border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 text-[10px] p-2 text-center bg-slate-50/50 dark:bg-slate-800/30 shrink-0">
+                            <Shield className="w-4 h-4 mb-0.5 text-slate-300 dark:text-slate-600" />
+                            <span>No photo</span>
+                          </div>
+                        )}
+
+                        {buyerPhoto && (
+                          <div
+                            onClick={() => setPreviewPhoto({ url: buyerPhoto, title: `${viewSale.buyerName} - Customer Photo` })}
+                            className="group relative h-16 w-16 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 cursor-pointer bg-slate-100 dark:bg-slate-800 hover:border-emerald-500 transition-all shrink-0"
+                          >
+                            <img src={buyerPhoto} alt="Buyer Photo" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[9px] font-bold">
+                              Photo
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="text-xs text-slate-500 space-y-0.5 min-w-0">
+                          {buyerAadhaarPublicId ? (
+                            <p className="font-mono text-[10px] text-slate-400 truncate max-w-[200px]" title={buyerAadhaarPublicId}>
+                              Cloudinary ID: {buyerAadhaarPublicId}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-slate-400">
+                              Cloudinary: {buyerAadhaarPhoto ? 'Uploaded' : 'Pending'}
+                            </p>
+                          )}
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            Accessible to Admin for statutory verification
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Printable Standard Retail Invoice Container (White Surface) */}
             <div className="bg-white rounded-xl border border-slate-200 text-slate-800 overflow-hidden shadow-sm print:border-none print:shadow-none">
@@ -1326,6 +1655,40 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
           </div>
         )}
       </Modal>
+      {/* High-Resolution Document Inspection Modal */}
+      {previewPhoto && (
+        <Modal
+          isOpen={Boolean(previewPhoto)}
+          onClose={() => setPreviewPhoto(null)}
+          title={previewPhoto.title}
+          subtitle={previewPhoto.publicId ? `Cloudinary Public ID: ${previewPhoto.publicId}` : 'High-Resolution KYC Inspection'}
+          size="2xl"
+        >
+          <div className="space-y-3">
+            <div className="max-h-[70vh] overflow-auto rounded-xl bg-slate-950 flex items-center justify-center p-2 border border-slate-800">
+              <img
+                src={previewPhoto.url}
+                alt={previewPhoto.title}
+                className="max-h-[65vh] w-auto object-contain rounded"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+              <span className="font-mono text-slate-400 text-[11px] truncate max-w-md">
+                {previewPhoto.url}
+              </span>
+              <a
+                href={previewPhoto.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 hover:bg-blue-100 font-semibold text-xs border border-blue-200 dark:border-blue-900"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open Full Size in New Tab
+              </a>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
