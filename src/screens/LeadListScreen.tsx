@@ -77,6 +77,23 @@ const isTimePastForToday = (displayDate: string, timeStr: string): boolean => {
   return chosenMinutes < currentMinutes;
 };
 
+const getStatusVariant = (s: LeadStatus): 'primary' | 'warning' | 'info' | 'success' | 'danger' | 'dark' => {
+  switch (s) {
+    case 'new':
+      return 'primary';
+    case 'follow_up':
+      return 'warning';
+    case 'interested':
+      return 'info';
+    case 'purchased':
+      return 'success';
+    case 'lost':
+      return 'danger';
+    default:
+      return 'dark';
+  }
+};
+
 export const LeadListScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { currentUser, isAdmin } = useAuth();
@@ -451,22 +468,159 @@ export const LeadListScreen: React.FC = () => {
     return counts;
   }, [leads]);
 
-  const getStatusVariant = (s: LeadStatus) => {
-    switch (s) {
-      case 'new':
-        return 'primary';
-      case 'follow_up':
-        return 'warning';
-      case 'interested':
-        return 'info';
-      case 'purchased':
-        return 'success';
-      case 'lost':
-        return 'danger';
-      default:
-        return 'dark';
-    }
-  };
+  const keyExtractor = useCallback((item: CustomerLead) => item.id, []);
+
+  const renderLeadItem = useCallback(
+    ({ item }: { item: CustomerLead }) => (
+      <AppCard
+        style={styles.leadCard}
+        onPress={() => {
+          setSelectedLead(item);
+          setDetailModalVisible(true);
+        }}
+      >
+        {/* Card Top: Avatar, Name, Company/Device, and Arrow Up-Right ↗ */}
+        <View style={styles.leadHeader}>
+          <View style={[styles.avatarCircle, { backgroundColor: isDark ? 'rgba(37,99,235,0.2)' : '#EFF6FF' }]}>
+            <Text style={[styles.avatarText, { color: colors.primary }]}>
+              {item.name ? item.name.charAt(0).toUpperCase() : 'C'}
+            </Text>
+          </View>
+
+          <View style={styles.leadHeaderInfo}>
+            <Text style={[styles.customerName, { color: colors.text }]} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={[styles.deviceSub, { color: colors.textSecondary }]} numberOfLines={1}>
+              {item.interestedBrand} • {item.interestedModel}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.arrowButton, { backgroundColor: colors.borderLight }]}
+            onPress={() => {
+              setSelectedLead(item);
+              setDetailModalVisible(true);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowUpRight size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Sub Details: Phone and Follow-Up Date */}
+        <View style={styles.metaRow}>
+          <Text style={[styles.metaItem, { color: colors.textSecondary }]}>
+            {item.phone}
+          </Text>
+          {item.followUpDate ? (
+            <Text style={[styles.metaItem, { color: colors.warning }]}>
+              {formatDate(item.followUpDate)}
+            </Text>
+          ) : (
+            <Text style={[styles.metaItem, { color: colors.textMuted }]}>
+              {formatDate(item.createdAt)}
+            </Text>
+          )}
+        </View>
+
+        {item.remarks ? (
+          <Text style={[styles.remarksText, { color: colors.textMuted }]} numberOfLines={1}>
+            "{item.remarks}"
+          </Text>
+        ) : null}
+
+        {/* Card Bottom: Status Pill Badge and Budget */}
+        <View style={styles.leadFooter}>
+          <StatusBadge
+            label={item.status.replace('_', ' ').toUpperCase()}
+            variant={getStatusVariant(item.status)}
+            size="small"
+          />
+
+          <Text
+            style={[styles.budgetText, { color: colors.text }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
+          >
+            {formatCurrency(item.budget)}
+          </Text>
+        </View>
+
+        {/* Quick Action Footer: Call, WhatsApp, View Details */}
+        <View style={[styles.actionsFooter, { borderTopColor: colors.border }]}>
+          <TouchableOpacity
+            style={[styles.quickActionBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
+            onPress={() => makePhoneCall(item.phone)}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[styles.actionBtnText, { color: colors.primary }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              Call
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.quickActionBtn, { backgroundColor: '#25D366', borderColor: '#25D366' }]}
+            onPress={() =>
+              sendWhatsAppMessage(
+                item.phone,
+                item.status === 'purchased'
+                  ? MESSAGE_TEMPLATES.PURCHASE_COMPLETED
+                  : MESSAGE_TEMPLATES.FOLLOW_UP_REMINDER(
+                      `${item.interestedBrand} ${item.interestedModel}`
+                    )
+              )
+            }
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[styles.actionBtnText, { color: '#FFFFFF' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              WhatsApp
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.quickActionBtn,
+              {
+                borderColor: colors.primary,
+                backgroundColor: isDark ? 'rgba(37,99,235,0.1)' : '#EFF6FF',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            ]}
+            onPress={() => {
+              setSelectedLead(item);
+              setDetailModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[styles.actionBtnText, { color: colors.primary }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              Details
+            </Text>
+            <ArrowUpRight size={13} color={colors.primary} style={{ marginLeft: 3 }} />
+          </TouchableOpacity>
+        </View>
+      </AppCard>
+    ),
+    [colors, isDark]
+  );
 
   return (
     <ScreenContainer edges={['top', 'left', 'right']}>
@@ -514,161 +668,14 @@ export const LeadListScreen: React.FC = () => {
       {/* Leads List */}
       <FlatList
         data={filteredLeads}
-        keyExtractor={item => item.id}
+        keyExtractor={keyExtractor}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={5}
         removeClippedSubviews={Platform.OS === 'android'}
-        renderItem={({ item }) => (
-          <AppCard
-            style={styles.leadCard}
-            onPress={() => {
-              setSelectedLead(item);
-              setDetailModalVisible(true);
-            }}
-          >
-            {/* Card Top: Avatar, Name, Company/Device, and Arrow Up-Right ↗ */}
-            <View style={styles.leadHeader}>
-              <View style={[styles.avatarCircle, { backgroundColor: isDark ? 'rgba(37,99,235,0.2)' : '#EFF6FF' }]}>
-                <Text style={[styles.avatarText, { color: colors.primary }]}>
-                  {item.name ? item.name.charAt(0).toUpperCase() : 'C'}
-                </Text>
-              </View>
-
-                <View style={styles.leadHeaderInfo}>
-                  <Text style={[styles.customerName, { color: colors.text }]} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  <Text style={[styles.deviceSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {item.interestedBrand} • {item.interestedModel}
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.arrowButton, { backgroundColor: colors.borderLight }]}
-                  onPress={() => {
-                    setSelectedLead(item);
-                    setDetailModalVisible(true);
-                  }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <ArrowUpRight size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Sub Details: Phone and Follow-Up Date */}
-              <View style={styles.metaRow}>
-                <Text style={[styles.metaItem, { color: colors.textSecondary }]}>
-                  {item.phone}
-                </Text>
-                {item.followUpDate ? (
-                  <Text style={[styles.metaItem, { color: colors.warning }]}>
-                    {formatDate(item.followUpDate)}
-                  </Text>
-                ) : (
-                  <Text style={[styles.metaItem, { color: colors.textMuted }]}>
-                    {formatDate(item.createdAt)}
-                  </Text>
-                )}
-              </View>
-
-              {item.remarks ? (
-                <Text style={[styles.remarksText, { color: colors.textMuted }]} numberOfLines={1}>
-                  "{item.remarks}"
-                </Text>
-              ) : null}
-
-              {/* Card Bottom: Status Pill Badge and Budget */}
-              <View style={styles.leadFooter}>
-                <StatusBadge
-                  label={item.status.replace('_', ' ').toUpperCase()}
-                  variant={getStatusVariant(item.status)}
-                  size="small"
-                />
-
-                <Text
-                  style={[styles.budgetText, { color: colors.text }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.75}
-                >
-                  {formatCurrency(item.budget)}
-                </Text>
-              </View>
-
-            {/* Quick Action Footer: Call, WhatsApp, View Details */}
-            <View style={[styles.actionsFooter, { borderTopColor: colors.border }]}>
-              <TouchableOpacity
-                style={[styles.quickActionBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
-                onPress={() => makePhoneCall(item.phone)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[styles.actionBtnText, { color: colors.primary }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}
-                >
-                  Call
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.quickActionBtn, { backgroundColor: '#25D366', borderColor: '#25D366' }]}
-                onPress={() =>
-                  sendWhatsAppMessage(
-                    item.phone,
-                    item.status === 'purchased'
-                      ? MESSAGE_TEMPLATES.PURCHASE_COMPLETED
-                      : MESSAGE_TEMPLATES.FOLLOW_UP_REMINDER(
-                          `${item.interestedBrand} ${item.interestedModel}`
-                        )
-                  )
-                }
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[styles.actionBtnText, { color: '#FFFFFF' }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}
-                >
-                  WhatsApp
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.quickActionBtn,
-                  {
-                    borderColor: colors.primary,
-                    backgroundColor: isDark ? 'rgba(37,99,235,0.1)' : '#EFF6FF',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  },
-                ]}
-                onPress={() => {
-                  setSelectedLead(item);
-                  setDetailModalVisible(true);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[styles.actionBtnText, { color: colors.primary }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}
-                >
-                  Details
-                </Text>
-                <ArrowUpRight size={13} color={colors.primary} style={{ marginLeft: 3 }} />
-              </TouchableOpacity>
-            </View>
-          </AppCard>
-        )}
+        renderItem={renderLeadItem}
         ListEmptyComponent={
           <EmptyState
             icon={<AppIcon name="users" size={28} color={colors.primary} />}

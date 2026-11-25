@@ -27,7 +27,7 @@ import { formatCurrency, formatDate } from '../utils/format';
 import { BRANDS } from '../constants';
 import { RADIUS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 
-export const PriceListScreen: React.FC = () => {
+export const PriceListScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const { colors, isDark } = useTheme();
 
   const [priceList, setPriceList] = useState<MobilePriceItem[]>([]);
@@ -36,14 +36,18 @@ export const PriceListScreen: React.FC = () => {
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MobilePriceItem | null>(null);
 
-  const loadPriceList = async () => {
+  const loadPriceList = useCallback(async () => {
     const list = await StorageService.getPriceList();
     setPriceList(list);
-  };
+  }, []);
 
   useEffect(() => {
     loadPriceList();
-  }, []);
+    const unsub = navigation?.addListener?.('focus', () => {
+      loadPriceList();
+    });
+    return unsub;
+  }, [navigation, loadPriceList]);
 
   const filteredItems = useMemo(() => {
     const isAll = selectedBrand === 'All';
@@ -73,6 +77,102 @@ export const PriceListScreen: React.FC = () => {
   }, [priceList]);
 
   const keyExtractor = useCallback((item: MobilePriceItem) => item.id, []);
+
+  const renderPriceItem = useCallback(
+    ({ item }: { item: MobilePriceItem }) => (
+      <AppCard
+        style={styles.priceCard}
+        onPress={() => {
+          if (item.priceHistory && item.priceHistory.length > 0) {
+            setSelectedItem(item);
+            setHistoryModalVisible(true);
+          }
+        }}
+      >
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <StatusBadge label={item.brand.toUpperCase()} variant="primary" size="small" />
+              <Text style={[styles.modelName, { color: colors.text }]}>
+                {item.model}
+              </Text>
+            </View>
+            <Text style={[styles.variantText, { color: colors.textSecondary }]}>
+              RAM: {item.ram || 'Standard'} • Storage: {item.storage || 'Standard'}
+            </Text>
+          </View>
+
+          {item.priceHistory && item.priceHistory.length > 0 && (
+            <TouchableOpacity
+              style={[styles.historyBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
+              onPress={() => {
+                setSelectedItem(item);
+                setHistoryModalVisible(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.historyBtnText, { color: colors.info }]}>
+                History ({item.priceHistory.length})
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Price Details Box - Retail Selling Price & Availability */}
+        <View
+          style={[
+            styles.priceBox,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.priceCol}>
+            <Text
+              style={[styles.priceLabel, { color: colors.textSecondary }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              Selling Price (MOP)
+            </Text>
+            <Text
+              style={[styles.sellingValue, { color: colors.accent }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {formatCurrency(item.sellingPrice)}
+            </Text>
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+          <View style={styles.priceCol}>
+            <Text
+              style={[styles.priceLabel, { color: colors.textSecondary }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              Availability
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <CheckCircle2 size={13} color={colors.accent} />
+              <Text
+                style={[styles.availabilityValue, { color: colors.accent }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
+                In Stock
+              </Text>
+            </View>
+          </View>
+        </View>
+      </AppCard>
+    ),
+    [colors, isDark]
+  );
 
   return (
     <ScreenContainer edges={['top', 'left', 'right']}>
@@ -126,98 +226,7 @@ export const PriceListScreen: React.FC = () => {
         maxToRenderPerBatch={10}
         windowSize={5}
         removeClippedSubviews={Platform.OS === 'android'}
-        renderItem={({ item }) => (
-          <AppCard
-            style={styles.priceCard}
-            onPress={() => {
-              if (item.priceHistory && item.priceHistory.length > 0) {
-                setSelectedItem(item);
-                setHistoryModalVisible(true);
-              }
-            }}
-          >
-            <View style={styles.cardHeader}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <StatusBadge label={item.brand.toUpperCase()} variant="primary" size="small" />
-                  <Text style={[styles.modelName, { color: colors.text }]}>
-                    {item.model}
-                  </Text>
-                </View>
-                <Text style={[styles.variantText, { color: colors.textSecondary }]}>
-                  RAM: {item.ram || 'Standard'} • Storage: {item.storage || 'Standard'}
-                </Text>
-              </View>
-
-              {item.priceHistory && item.priceHistory.length > 0 && (
-                <TouchableOpacity
-                  style={[styles.historyBtn, { borderColor: colors.border, backgroundColor: colors.borderLight }]}
-                  onPress={() => {
-                    setSelectedItem(item);
-                    setHistoryModalVisible(true);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.historyBtnText, { color: colors.info }]}>
-                    History ({item.priceHistory.length})
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Price Details Box - Retail Selling Price & Availability */}
-            <View
-              style={[
-                styles.priceBox,
-                {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <View style={styles.priceCol}>
-                <Text
-                  style={[styles.priceLabel, { color: colors.textSecondary }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                >
-                  Selling Price (MOP)
-                </Text>
-                <Text
-                  style={[styles.sellingValue, { color: colors.accent }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.7}
-                >
-                  {formatCurrency(item.sellingPrice)}
-                </Text>
-              </View>
-
-              <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-              <View style={styles.priceCol}>
-                <Text
-                  style={[styles.priceLabel, { color: colors.textSecondary }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                >
-                  Availability
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <CheckCircle2 size={13} color={colors.accent} />
-                  <Text
-                    style={[styles.availabilityValue, { color: colors.accent }]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.75}
-                  >
-                    In Stock
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </AppCard>
-        )}
+        renderItem={renderPriceItem}
         ListEmptyComponent={
           <EmptyState
             icon={<AppIcon name="tag" size={28} color={colors.primary} />}
