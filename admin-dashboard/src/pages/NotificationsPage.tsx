@@ -107,7 +107,21 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
   };
 
   useEffect(() => {
+    // Initial fetch fallback
     loadData();
+
+    // Real-time listener for notifications
+    const unsubNotifs = ApiService.subscribeToNotifications(
+      (liveNotifs) => {
+        setNotifications(liveNotifs);
+        setLoading(false);
+      },
+      (err) => console.warn('[NotificationsPage] Notifications listener fallback:', err)
+    );
+
+    return () => {
+      unsubNotifs();
+    };
   }, []);
 
   const handleMarkAsRead = async (id: string) => {

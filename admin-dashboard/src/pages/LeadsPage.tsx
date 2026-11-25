@@ -101,7 +101,30 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ initialParams, onClearPara
   };
 
   useEffect(() => {
+    // Initial fetch
     loadLeads();
+
+    // Real-time listener for customer leads
+    const unsubLeads = ApiService.subscribeToLeads(
+      (liveLeads) => {
+        setLeads(liveLeads);
+        setLoading(false);
+      },
+      (err) => console.warn('[LeadsPage] Leads listener fallback:', err)
+    );
+
+    // Real-time listener for staff users (for assignment dropdown)
+    const unsubUsers = ApiService.subscribeToUsers(
+      (liveUsers) => {
+        setUsers(liveUsers);
+      },
+      (err) => console.warn('[LeadsPage] Users listener fallback:', err)
+    );
+
+    return () => {
+      unsubLeads();
+      unsubUsers();
+    };
   }, []);
 
   useEffect(() => {

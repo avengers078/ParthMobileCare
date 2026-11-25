@@ -91,7 +91,21 @@ export const PriceListPage: React.FC = () => {
   };
 
   useEffect(() => {
+    // Initial fetch fallback
     loadPrices();
+
+    // Real-time listener for mobile prices catalog
+    const unsubPrices = ApiService.subscribeToMobilePrices(
+      (livePrices) => {
+        setPrices(livePrices);
+        setLoading(false);
+      },
+      (err) => console.warn('[PriceListPage] Prices listener fallback:', err)
+    );
+
+    return () => {
+      unsubPrices();
+    };
   }, []);
 
   const handleOpenAdd = () => {

@@ -61,7 +61,49 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate }) => {
   };
 
   useEffect(() => {
+    // Initial fetch fallback
     loadAllData();
+
+    // Real-time listeners for live overview metrics
+    const unsubUsers = ApiService.subscribeToUsers(
+      (liveUsers) => setUsers(liveUsers),
+      (err) => console.warn('[OverviewPage] Users listener fallback:', err)
+    );
+
+    const unsubAttendance = ApiService.subscribeToAttendanceRecords(
+      100,
+      (liveAttendance) => setAttendance(liveAttendance),
+      (err) => console.warn('[OverviewPage] Attendance listener fallback:', err)
+    );
+
+    const unsubLeads = ApiService.subscribeToLeads(
+      (liveLeads) => setLeads(liveLeads),
+      (err) => console.warn('[OverviewPage] Leads listener fallback:', err)
+    );
+
+    const unsubPurchases = ApiService.subscribeToSecondHandPurchases(
+      (livePurchases) => {
+        setPurchases(livePurchases);
+        setLoading(false);
+      },
+      (err) => console.warn('[OverviewPage] Purchases listener fallback:', err)
+    );
+
+    const unsubSales = ApiService.subscribeToSecondHandSales(
+      (liveSales) => {
+        setSales(liveSales);
+        setLoading(false);
+      },
+      (err) => console.warn('[OverviewPage] Sales listener fallback:', err)
+    );
+
+    return () => {
+      unsubUsers();
+      unsubAttendance();
+      unsubLeads();
+      unsubPurchases();
+      unsubSales();
+    };
   }, []);
 
   const now = new Date();

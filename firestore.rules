@@ -322,7 +322,12 @@ service cloud.firestore {
     }
 
     function isValidLead(data) {
-      let allowed = ['id', 'name', 'phone', 'alternatePhone', 'interestedBrand', 'interestedModel', 'budget', 'remarks', 'status', 'followUpDate', 'followUpTime', 'createdBy', 'createdByName', 'assignedTo', 'assignedToName', 'createdAt', 'updatedAt', 'history', '_syncedAt'];
+      let allowed = [
+        'id', 'name', 'phone', 'alternatePhone', 'interestedBrand', 'interestedModel',
+        'budget', 'remarks', 'status', 'followUpDate', 'followUpTime', 'createdBy',
+        'createdByName', 'assignedTo', 'assignedToName', 'createdAt', 'updatedAt',
+        'history', 'inquiryPhotos', 'repairPhotos', '_syncedAt'
+      ];
       let required = ['id', 'name', 'phone', 'interestedBrand', 'interestedModel', 'budget', 'remarks', 'status', 'createdBy', 'createdByName', 'createdAt', 'updatedAt', 'history'];
 
       return data.keys().hasOnly(allowed) &&
@@ -345,6 +350,8 @@ service cloud.firestore {
              isValidString(data.createdAt, 1, 50) &&
              isValidString(data.updatedAt, 1, 50) &&
              data.history is list && data.history.size() <= 100 &&
+             (!('inquiryPhotos' in data) || (data.inquiryPhotos is list && data.inquiryPhotos.size() <= 20)) &&
+             (!('repairPhotos' in data) || (data.repairPhotos is list && data.repairPhotos.size() <= 20)) &&
              isValidOptionalString('_syncedAt', data, 0, 50);
     }
 
@@ -401,7 +408,7 @@ service cloud.firestore {
     function isValidSecondHandKyc(data) {
       let allowed = [
         'id', 'purchaseId', 'customerName', 'phone', 'alternatePhone', 'address',
-        'aadhaarNumber', 'aadhaarFrontUri', 'aadhaarBackUri', 'aadhaarPhotoFront',
+        'aadhaarNumber', 'rawAadhaarNumber', 'aadhaarFrontUri', 'aadhaarBackUri', 'aadhaarPhotoFront',
         'aadhaarPhotoBack', 'aadhaarCardPhotoUri', 'customerPhotoUri',
         'billImageUri', 'digitalSignatureUri', 'createdAt', 'recordedAt',
         'recordedByStaffId', 'recordedByStaffName', '_syncedAt',
@@ -418,6 +425,7 @@ service cloud.firestore {
              isValidOptionalString('alternatePhone', data, 0, 20) &&
              isValidString(data.address, 1, 250) &&
              isValidString(data.aadhaarNumber, 4, 20) &&
+             isValidOptionalString('rawAadhaarNumber', data, 0, 20) &&
              isValidOptionalString('aadhaarFrontUri', data, 0, 500000) &&
              isValidOptionalString('aadhaarBackUri', data, 0, 500000) &&
              isValidOptionalString('aadhaarPhotoFront', data, 0, 500000) &&
@@ -482,7 +490,7 @@ service cloud.firestore {
     function isValidSecondHandSaleKyc(data) {
       let allowed = [
         'id', 'saleId', 'buyerName', 'phone', 'alternatePhone', 'address',
-        'aadhaarNumber', 'aadhaarPhotoUri', 'buyerPhotoUri', 'digitalSignatureUri',
+        'aadhaarNumber', 'rawAadhaarNumber', 'aadhaarPhotoUri', 'buyerPhotoUri', 'digitalSignatureUri',
         'recordedByStaffId', 'recordedByStaffName', 'recordedAt', 'createdAt', '_syncedAt',
         'aadhaarPhotoPublicId'
       ];
@@ -497,6 +505,7 @@ service cloud.firestore {
              isValidOptionalString('alternatePhone', data, 0, 20) &&
              isValidString(data.address, 1, 250) &&
              isValidString(data.aadhaarNumber, 4, 20) &&
+             isValidOptionalString('rawAadhaarNumber', data, 0, 20) &&
              isValidOptionalString('aadhaarPhotoUri', data, 0, 500000) &&
              isValidOptionalString('aadhaarPhotoPublicId', data, 0, 500) &&
              isValidOptionalString('buyerPhotoUri', data, 0, 500000) &&
@@ -528,7 +537,12 @@ service cloud.firestore {
     }
 
     function isValidSalarySlip(data) {
-      let allowed = ['id', 'staffId', 'staffName', 'designation', 'month', 'monthKey', 'basicSalary', 'salesIncentive', 'attendanceBonus', 'deductions', 'netSalary', 'totalWorkingDays', 'presentDays', 'lateDays', 'salesAchieved', 'generatedDate', 'isPaid', '_syncedAt'];
+      let allowed = [
+        'id', 'staffId', 'staffName', 'designation', 'month', 'monthKey',
+        'basicSalary', 'salesIncentive', 'attendanceBonus', 'deductions',
+        'netSalary', 'totalWorkingDays', 'presentDays', 'lateDays', 'salesAchieved',
+        'generatedDate', 'isPaid', 'paidDate', 'paymentMethod', 'transactionRef', '_syncedAt'
+      ];
       let required = ['id', 'staffId', 'staffName', 'designation', 'month', 'monthKey', 'basicSalary', 'salesIncentive', 'attendanceBonus', 'deductions', 'netSalary', 'totalWorkingDays', 'presentDays', 'lateDays', 'salesAchieved', 'generatedDate', 'isPaid'];
 
       return data.keys().hasOnly(allowed) &&
@@ -550,6 +564,9 @@ service cloud.firestore {
              data.salesAchieved is number && data.salesAchieved >= 0 &&
              isValidString(data.generatedDate, 1, 50) &&
              data.isPaid is bool &&
+             isValidOptionalString('paidDate', data, 0, 50) &&
+             isValidOptionalString('paymentMethod', data, 0, 50) &&
+             isValidOptionalString('transactionRef', data, 0, 100) &&
              isValidOptionalString('_syncedAt', data, 0, 50);
     }
 

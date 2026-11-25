@@ -43,6 +43,16 @@ interface CacheEntry<T> {
 const memoryCache = new Map<string, CacheEntry<any>>();
 const inFlightRequests = new Map<string, Promise<any>>();
 
+function cleanPayload<T extends Record<string, any>>(obj: T): T {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 export class ApiService {
   // --- High-Performance Memory Cache & Deduplication (Spark-Tier Optimized) ---
   static getFromCache<T>(key: string): T | null {
@@ -227,10 +237,12 @@ export class ApiService {
     const adminId = auth.currentUser?.uid || adminUser?.id;
     const adminName = adminUser?.name || auth.currentUser?.displayName || 'Administrator';
 
-    await setDoc(doc(db, FIRESTORE_COLLECTIONS.USERS, user.id), {
+    const payload = cleanPayload({
       ...userData,
       _syncedAt: new Date().toISOString(),
-    }, { merge: true });
+    });
+
+    await setDoc(doc(db, FIRESTORE_COLLECTIONS.USERS, user.id), payload, { merge: true });
 
     this.invalidateCache('users');
 
@@ -246,6 +258,60 @@ export class ApiService {
     }
   }
 
+  /**
+   * Real-time listener for users / staff directory.
+   */
+  static subscribeToUsers(
+    onUpdate: (users: User[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const colRef = collection(db, FIRESTORE_COLLECTIONS.USERS);
+    return onSnapshot(colRef, (snap) => {
+      this.invalidateCache('users');
+      const users = snap.docs.map(d => ({ ...d.data(), id: d.id } as User));
+      onUpdate(users);
+    }, (err) => {
+      console.warn('[AdminApi] Users snapshot error:', err);
+      onError?.(err);
+    });
+  }
+
+  /**
+   * Real-time listener for staff invitations.
+   */
+  static subscribeToStaffInvitations(
+    onUpdate: (invitations: StaffInvitation[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const colRef = collection(db, 'staff_invitations');
+    return onSnapshot(colRef, (snap) => {
+      this.invalidateCache('staff_invitations');
+      const invitations = snap.docs.map(d => ({ ...d.data(), id: d.id } as StaffInvitation));
+      onUpdate(invitations);
+    }, (err) => {
+      console.warn('[AdminApi] Staff invitations snapshot error:', err);
+      onError?.(err);
+    });
+  }
+
+  /**
+   * Real-time listener for device change requests.
+   */
+  static subscribeToDeviceChangeRequests(
+    onUpdate: (requests: DeviceChangeRequest[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const colRef = collection(db, FIRESTORE_COLLECTIONS.DEVICE_CHANGE_REQUESTS);
+    return onSnapshot(colRef, (snap) => {
+      this.invalidateCache('deviceChangeRequests');
+      const requests = snap.docs.map(d => ({ ...d.data(), id: d.id } as DeviceChangeRequest));
+      onUpdate(requests);
+    }, (err) => {
+      console.warn('[AdminApi] Device change requests snapshot error:', err);
+      onError?.(err);
+    });
+  }
+
   // --- Attendance ---
   static async getAttendanceRecords(limitCount = 300, forceRefresh = false): Promise<AttendanceRecord[]> {
     return this.cachedFetch(`attendance_${limitCount}`, 20000, forceRefresh, async () => {
@@ -256,6 +322,29 @@ export class ApiService {
       );
       const snap = await getDocs(q);
       return snap.docs.map(d => ({ ...d.data(), id: d.id } as AttendanceRecord));
+    });
+  }
+
+  /**
+   * Real-time listener for attendance records.
+   */
+  static subscribeToAttendanceRecords(
+    limitCount = 300,
+    onUpdate: (records: AttendanceRecord[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const q = query(
+      collection(db, FIRESTORE_COLLECTIONS.ATTENDANCE),
+      orderBy('date', 'desc'),
+      limit(limitCount)
+    );
+    return onSnapshot(q, (snap) => {
+      this.invalidateCache('attendance');
+      const records = snap.docs.map(d => ({ ...d.data(), id: d.id } as AttendanceRecord));
+      onUpdate(records);
+    }, (err) => {
+      console.warn('[AdminApi] Attendance snapshot error:', err);
+      onError?.(err);
     });
   }
 
@@ -297,8 +386,30 @@ export class ApiService {
     });
   }
 
+  /**
+   * Real-time listener for customer leads.
+   */
+  static subscribeToLeads(
+    onUpdate: (leads: CustomerLead[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const q = query(collection(db, FIRESTORE_COLLECTIONS.LEADS), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snap) => {
+      this.invalidateCache('leads');
+      const leads = snap.docs.map(d => ({ ...d.data(), id: d.id } as CustomerLead));
+      onUpdate(leads);
+    }, (err) => {
+      console.warn('[AdminApi] Leads snapshot error:', err);
+      onError?.(err);
+    });
+  }
+
   static async saveLead(lead: CustomerLead, adminUser?: { id: string; name: string }): Promise<void> {
-    await setDoc(doc(db, FIRESTORE_COLLECTIONS.LEADS, lead.id), lead, { merge: true });
+    const payload = cleanPayload({
+      ...lead,
+      _syncedAt: new Date().toISOString(),
+    });
+    await setDoc(doc(db, FIRESTORE_COLLECTIONS.LEADS, lead.id), payload, { merge: true });
     this.invalidateCache('leads');
 
     if (adminUser) {
@@ -336,8 +447,30 @@ export class ApiService {
     });
   }
 
+  /**
+   * Real-time listener for mobile prices catalog.
+   */
+  static subscribeToMobilePrices(
+    onUpdate: (prices: MobilePriceItem[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const colRef = collection(db, FIRESTORE_COLLECTIONS.MOBILE_PRICES);
+    return onSnapshot(colRef, (snap) => {
+      this.invalidateCache('prices');
+      const prices = snap.docs.map(d => ({ ...d.data(), id: d.id } as MobilePriceItem));
+      onUpdate(prices);
+    }, (err) => {
+      console.warn('[AdminApi] Mobile prices snapshot error:', err);
+      onError?.(err);
+    });
+  }
+
   static async saveMobilePrice(item: MobilePriceItem, adminUser?: { id: string; name: string }): Promise<void> {
-    await setDoc(doc(db, FIRESTORE_COLLECTIONS.MOBILE_PRICES, item.id), item, { merge: true });
+    const payload = cleanPayload({
+      ...item,
+      _syncedAt: new Date().toISOString(),
+    });
+    await setDoc(doc(db, FIRESTORE_COLLECTIONS.MOBILE_PRICES, item.id), payload, { merge: true });
     this.invalidateCache('prices');
 
     if (adminUser) {
@@ -355,7 +488,11 @@ export class ApiService {
   static async saveBulkMobilePrices(items: MobilePriceItem[], adminUser?: { id: string; name: string }): Promise<number> {
     let count = 0;
     for (const item of items) {
-      await setDoc(doc(db, FIRESTORE_COLLECTIONS.MOBILE_PRICES, item.id), item, { merge: true });
+      const payload = cleanPayload({
+        ...item,
+        _syncedAt: new Date().toISOString(),
+      });
+      await setDoc(doc(db, FIRESTORE_COLLECTIONS.MOBILE_PRICES, item.id), payload, { merge: true });
       count++;
     }
     this.invalidateCache('prices');
@@ -502,19 +639,19 @@ export class ApiService {
       ...inventoryData
     } = purchase;
 
-    const parentPayload = {
+    const parentPayload = cleanPayload({
       ...inventoryData,
       hasSensitiveKyc: true,
       _syncedAt: new Date().toISOString(),
-    };
+    });
 
     await setDoc(doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, purchase.id), parentPayload, { merge: true });
 
     // Store sensitive KYC in isolated Admin-only subcollection
     if (customerName || aadhaarNumber || customerPhotoUri) {
       const kycDocRef = doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, purchase.id, 'kyc_sensitive', 'record');
-      const kycPayload: SecondHandKycRecord = {
-        id: `${purchase.id}_kyc`,
+      const kycPayload: SecondHandKycRecord = cleanPayload({
+        id: 'record',
         purchaseId: purchase.id,
         customerName: customerName || 'Verified Customer',
         phone: phone || '',
@@ -530,9 +667,10 @@ export class ApiService {
         billImageUri: billImageUri || '',
         digitalSignatureUri: digitalSignatureUri || '',
         createdAt: new Date().toISOString(),
+        _syncedAt: new Date().toISOString(),
         recordedByStaffId: purchase.purchasedByStaffId || adminUser?.id || 'admin',
         recordedByStaffName: purchase.purchasedByStaffName || adminUser?.name || 'Admin',
-      };
+      });
       await setDoc(kycDocRef, kycPayload, { merge: true });
     }
 
@@ -670,11 +808,11 @@ export class ApiService {
       ...saleInventory
     } = sale;
 
-    const parentPayload = {
+    const parentPayload = cleanPayload({
       ...saleInventory,
       hasSensitiveKyc: !!aadhaarNumber,
       _syncedAt: new Date().toISOString(),
-    };
+    });
 
     const batch = writeBatch(db);
     const saleRef = doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, sale.id);
@@ -692,7 +830,7 @@ export class ApiService {
 
     if (aadhaarNumber || buyerPhotoUri || aadhaarPhotoUri) {
       const kycDocRef = doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, sale.id, 'kyc_sensitive', 'record');
-      const kycPayload: SecondHandSaleKycRecord = {
+      const kycPayload: SecondHandSaleKycRecord = cleanPayload({
         id: 'record',
         saleId: sale.id,
         buyerName: sale.buyerName,
@@ -707,9 +845,10 @@ export class ApiService {
         digitalSignatureUri: sale.digitalSignatureUri || '',
         createdAt: new Date().toISOString(),
         recordedAt: new Date().toISOString(),
+        _syncedAt: new Date().toISOString(),
         recordedByStaffId: sale.soldByStaffId || adminUser?.id || 'admin',
         recordedByStaffName: sale.soldByStaffName || adminUser?.name || 'Admin',
-      };
+      });
       await setDoc(kycDocRef, kycPayload, { merge: true });
     }
 
@@ -741,8 +880,32 @@ export class ApiService {
     });
   }
 
+  /**
+   * Real-time listener for sales targets.
+   */
+  static subscribeToSalesTargets(
+    monthKey: string | undefined,
+    onUpdate: (targets: SalesTarget[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const colRef = collection(db, FIRESTORE_COLLECTIONS.SALES_TARGETS);
+    const q = monthKey ? query(colRef, where('month', '==', monthKey)) : colRef;
+    return onSnapshot(q, (snap) => {
+      this.invalidateCache('targets');
+      const targets = snap.docs.map(d => ({ ...d.data(), id: d.id } as SalesTarget));
+      onUpdate(targets);
+    }, (err) => {
+      console.warn('[AdminApi] Sales targets snapshot error:', err);
+      onError?.(err);
+    });
+  }
+
   static async saveSalesTarget(target: SalesTarget, adminUser?: { id: string; name: string }): Promise<void> {
-    await setDoc(doc(db, FIRESTORE_COLLECTIONS.SALES_TARGETS, target.id), target, { merge: true });
+    const payload = cleanPayload({
+      ...target,
+      _syncedAt: new Date().toISOString(),
+    });
+    await setDoc(doc(db, FIRESTORE_COLLECTIONS.SALES_TARGETS, target.id), payload, { merge: true });
     this.invalidateCache('targets');
 
     if (adminUser) {
@@ -770,8 +933,32 @@ export class ApiService {
     });
   }
 
+  /**
+   * Real-time listener for salary slips.
+   */
+  static subscribeToSalarySlips(
+    monthKey: string | undefined,
+    onUpdate: (slips: SalarySlip[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const colRef = collection(db, FIRESTORE_COLLECTIONS.SALARY_SLIPS);
+    const q = monthKey ? query(colRef, where('monthKey', '==', monthKey)) : colRef;
+    return onSnapshot(q, (snap) => {
+      this.invalidateCache('slips');
+      const slips = snap.docs.map(d => ({ ...d.data(), id: d.id } as SalarySlip));
+      onUpdate(slips);
+    }, (err) => {
+      console.warn('[AdminApi] Salary slips snapshot error:', err);
+      onError?.(err);
+    });
+  }
+
   static async saveSalarySlip(slip: SalarySlip, adminUser?: { id: string; name: string }): Promise<void> {
-    await setDoc(doc(db, FIRESTORE_COLLECTIONS.SALARY_SLIPS, slip.id), slip, { merge: true });
+    const payload = cleanPayload({
+      ...slip,
+      _syncedAt: new Date().toISOString(),
+    });
+    await setDoc(doc(db, FIRESTORE_COLLECTIONS.SALARY_SLIPS, slip.id), payload, { merge: true });
     this.invalidateCache('slips');
 
     if (adminUser) {
@@ -792,6 +979,24 @@ export class ApiService {
       const q = query(collection(db, FIRESTORE_COLLECTIONS.NOTIFICATIONS), orderBy('timestamp', 'desc'), limit(50));
       const snap = await getDocs(q);
       return snap.docs.map(d => ({ ...d.data(), id: d.id } as AppNotification));
+    });
+  }
+
+  /**
+   * Real-time listener for notifications.
+   */
+  static subscribeToNotifications(
+    onUpdate: (notifications: AppNotification[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const q = query(collection(db, FIRESTORE_COLLECTIONS.NOTIFICATIONS), orderBy('timestamp', 'desc'), limit(50));
+    return onSnapshot(q, (snap) => {
+      this.invalidateCache('notifications');
+      const notifs = snap.docs.map(d => ({ ...d.data(), id: d.id } as AppNotification));
+      onUpdate(notifs);
+    }, (err) => {
+      console.warn('[AdminApi] Notifications snapshot error:', err);
+      onError?.(err);
     });
   }
 
@@ -976,9 +1181,13 @@ export class ApiService {
   }
 
   static async saveShopConfig(config: ShopConfig, adminUser?: { id: string; name: string }): Promise<void> {
+    const payload = cleanPayload({
+      ...config,
+      _syncedAt: new Date().toISOString(),
+    });
     // Write to both 'main_store' (standard mobile) and 'main' for 100% synchronization compatibility
-    await setDoc(doc(db, FIRESTORE_COLLECTIONS.SHOP_CONFIG, 'main_store'), config, { merge: true });
-    await setDoc(doc(db, FIRESTORE_COLLECTIONS.SHOP_CONFIG, 'main'), config, { merge: true });
+    await setDoc(doc(db, FIRESTORE_COLLECTIONS.SHOP_CONFIG, 'main_store'), payload, { merge: true });
+    await setDoc(doc(db, FIRESTORE_COLLECTIONS.SHOP_CONFIG, 'main'), payload, { merge: true });
     this.invalidateCache('shopConfig');
 
     if (adminUser) {

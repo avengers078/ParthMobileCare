@@ -319,7 +319,39 @@ export const StaffPage: React.FC<StaffPageProps> = ({ initialParams, onClearPara
   };
 
   useEffect(() => {
+    // Initial fetch fallback
     loadStaff();
+
+    // Subscribe to real-time users/staff updates from Firestore
+    const unsubUsers = ApiService.subscribeToUsers(
+      (liveUsers) => {
+        setUsers(liveUsers);
+        setLoading(false);
+      },
+      (err) => console.warn('[StaffPage] Users listener fallback:', err)
+    );
+
+    // Subscribe to real-time staff invitations
+    const unsubInvitations = ApiService.subscribeToStaffInvitations(
+      (liveInvitations) => {
+        setInvitations(liveInvitations);
+      },
+      (err) => console.warn('[StaffPage] Invitations listener fallback:', err)
+    );
+
+    // Subscribe to real-time device change requests
+    const unsubRequests = ApiService.subscribeToDeviceChangeRequests(
+      (liveRequests) => {
+        setDeviceRequests(liveRequests);
+      },
+      (err) => console.warn('[StaffPage] Device requests listener fallback:', err)
+    );
+
+    return () => {
+      unsubUsers();
+      unsubInvitations();
+      unsubRequests();
+    };
   }, []);
 
   useEffect(() => {

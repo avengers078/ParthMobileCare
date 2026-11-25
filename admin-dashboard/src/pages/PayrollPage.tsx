@@ -95,6 +95,30 @@ export const PayrollPage: React.FC<PayrollPageProps> = ({ initialParams, onClear
 
   useEffect(() => {
     loadPayrollData();
+
+    // Real-time listener for salary slips in selected month
+    const unsubSlips = ApiService.subscribeToSalarySlips(
+      selectedMonth,
+      (liveSlips) => {
+        setSlips(liveSlips);
+        setLoading(false);
+      },
+      (err) => console.warn('[PayrollPage] Slips listener fallback:', err)
+    );
+
+    // Real-time listener for sales targets in selected month
+    const unsubTargets = ApiService.subscribeToSalesTargets(
+      selectedMonth,
+      (liveTargets) => {
+        setTargets(liveTargets);
+      },
+      (err) => console.warn('[PayrollPage] Targets listener fallback:', err)
+    );
+
+    return () => {
+      unsubSlips();
+      unsubTargets();
+    };
   }, [selectedMonth]);
 
   useEffect(() => {
