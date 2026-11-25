@@ -78,6 +78,7 @@ export const StaffPage: React.FC<StaffPageProps> = ({ initialParams, onClearPara
   const [resetDeviceStaff, setResetDeviceStaff] = useState<User | null>(null);
   const [revokeConfirmToken, setRevokeConfirmToken] = useState<string | null>(null);
   const [approveRegStaff, setApproveRegStaff] = useState<User | null>(null);
+  const [viewingPhotoStaff, setViewingPhotoStaff] = useState<User | null>(null);
   const [regSalary, setRegSalary] = useState(20000);
   const [regTarget, setRegTarget] = useState(200000);
   const [rejectTarget, setRejectTarget] = useState<{
@@ -737,8 +738,32 @@ export const StaffPage: React.FC<StaffPageProps> = ({ initialParams, onClearPara
                   {users.filter(u => u.registrationStatus === 'pending').map(applicant => (
                     <tr key={applicant.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900 dark:text-white">{applicant.name}</div>
-                        <div className="text-[10px] text-slate-400">{applicant.email} • {applicant.phone}</div>
+                        <div className="flex items-center space-x-3">
+                          {applicant.avatarUrl ? (
+                            <img
+                              src={applicant.avatarUrl}
+                              alt={applicant.name}
+                              className="w-11 h-11 rounded-full object-cover border-2 border-brand-500 shadow-sm cursor-pointer hover:scale-105 transition-transform shrink-0"
+                              onClick={() => setViewingPhotoStaff(applicant)}
+                              title="Click to inspect face photo"
+                            />
+                          ) : (
+                            <div className="w-11 h-11 rounded-full bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-400 text-xs font-bold shrink-0">
+                              {applicant.name.charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <span>{applicant.name}</span>
+                              {applicant.avatarUrl && (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded">
+                                  Face Photo
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400">{applicant.email} • {applicant.phone}</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium">
                         {applicant.designation || 'Staff'}
@@ -838,9 +863,33 @@ export const StaffPage: React.FC<StaffPageProps> = ({ initialParams, onClearPara
                     {users.filter(isFacePending).map(staff => (
                       <tr key={staff.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900 dark:text-white">{staff.name}</div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">{staff.email}</div>
-                          <div className="text-[10px] text-slate-400">{staff.designation || 'Sales Executive'}</div>
+                          <div className="flex items-center space-x-3">
+                            {staff.avatarUrl ? (
+                              <img
+                                src={staff.avatarUrl}
+                                alt={staff.name}
+                                className="w-11 h-11 rounded-full object-cover border-2 border-brand-500 shadow-sm cursor-pointer hover:scale-105 transition-transform shrink-0"
+                                onClick={() => setViewingPhotoStaff(staff)}
+                                title="Click to inspect face photo"
+                              />
+                            ) : (
+                              <div className="w-11 h-11 rounded-full bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-400 text-xs font-bold shrink-0">
+                                {staff.name.charAt(0)}
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <span>{staff.name}</span>
+                                {staff.avatarUrl && (
+                                  <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 font-semibold px-1.5 py-0.5 rounded">
+                                    Photo
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">{staff.email}</div>
+                              <div className="text-[10px] text-slate-400">{staff.designation || 'Sales Executive'}</div>
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3 px-4">
                           <span className="font-mono text-[11px] text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
@@ -2123,6 +2172,30 @@ export const StaffPage: React.FC<StaffPageProps> = ({ initialParams, onClearPara
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Rejection Reason *
               </label>
+              {/* Quick Preset Buttons for Admin Convenience */}
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectReason('Duplicate Face: This person is already registered under an existing staff account.')}
+                  className="px-2 py-1 text-[11px] bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 rounded-lg border border-rose-200 dark:border-rose-800 font-medium hover:bg-rose-100 transition-colors"
+                >
+                  Duplicate Face Detected
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRejectReason('Unclear Face Photo: Please retake a clear, frontal photo with good lighting.')}
+                  className="px-2 py-1 text-[11px] bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 rounded-lg border border-amber-200 dark:border-amber-800 font-medium hover:bg-amber-100 transition-colors"
+                >
+                  Unclear Face Photo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRejectReason('Device Verification Failed: Bound device could not be authenticated.')}
+                  className="px-2 py-1 text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-700 font-medium hover:bg-slate-200 transition-colors"
+                >
+                  Device Issue
+                </button>
+              </div>
               <textarea
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
@@ -2160,11 +2233,34 @@ export const StaffPage: React.FC<StaffPageProps> = ({ initialParams, onClearPara
           title={`Approve Staff Registration — ${approveRegStaff.name}`}
         >
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl space-y-1">
-              <div className="font-semibold text-slate-900 dark:text-white">{approveRegStaff.name}</div>
-              <div className="text-slate-500">{approveRegStaff.email} • {approveRegStaff.phone}</div>
-              <div className="text-slate-500">Designation: <span className="font-semibold text-slate-700 dark:text-slate-300">{approveRegStaff.designation || 'Staff'}</span></div>
-              <div className="text-slate-500">Device: <span className="font-semibold text-slate-700 dark:text-slate-300">{approveRegStaff.deviceModel || 'Mobile Device'}</span></div>
+            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center space-x-3.5">
+              {approveRegStaff.avatarUrl ? (
+                <img
+                  src={approveRegStaff.avatarUrl}
+                  alt={approveRegStaff.name}
+                  className="w-16 h-16 rounded-xl object-cover border-2 border-emerald-500 shadow-md cursor-pointer hover:opacity-90 shrink-0"
+                  onClick={() => setViewingPhotoStaff(approveRegStaff)}
+                  title="Click to view full photo"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-xl bg-slate-200 dark:bg-slate-700 flex flex-col items-center justify-center text-slate-500 text-xs font-bold shrink-0">
+                  <ScanFace className="w-6 h-6 mb-0.5 opacity-60" />
+                  <span className="text-[10px]">No Photo</span>
+                </div>
+              )}
+              <div className="space-y-0.5 flex-1 min-w-0">
+                <div className="font-semibold text-slate-900 dark:text-white text-sm flex items-center justify-between">
+                  <span className="truncate">{approveRegStaff.name}</span>
+                  {approveRegStaff.avatarUrl && (
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 font-semibold px-2 py-0.5 rounded-full shrink-0">
+                      Face Captured
+                    </span>
+                  )}
+                </div>
+                <div className="text-slate-500 truncate">{approveRegStaff.email} • {approveRegStaff.phone}</div>
+                <div className="text-slate-500">Designation: <span className="font-semibold text-slate-700 dark:text-slate-300">{approveRegStaff.designation || 'Staff'}</span></div>
+                <div className="text-slate-500">Device: <span className="font-semibold text-slate-700 dark:text-slate-300">{approveRegStaff.deviceModel || 'Mobile Device'}</span></div>
+              </div>
             </div>
 
             <p className="text-slate-600 dark:text-slate-400">
@@ -2216,6 +2312,110 @@ export const StaffPage: React.FC<StaffPageProps> = ({ initialParams, onClearPara
                 <Check className="w-3.5 h-3.5" />
                 <span>{submitting ? 'Approving...' : 'Approve & Activate Staff'}</span>
               </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Staff Face Verification Photo Modal & Duplicate Inspector */}
+      {viewingPhotoStaff && (
+        <Modal
+          isOpen={true}
+          onClose={() => setViewingPhotoStaff(null)}
+          title={`Face Verification — ${viewingPhotoStaff.name}`}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="text-center">
+              {viewingPhotoStaff.avatarUrl ? (
+                <div className="inline-block relative rounded-2xl overflow-hidden border-2 border-brand-500 shadow-xl bg-slate-900 max-w-xs mx-auto">
+                  <img
+                    src={viewingPhotoStaff.avatarUrl}
+                    alt={viewingPhotoStaff.name}
+                    className="w-full max-h-80 object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="p-8 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-400">
+                  <ScanFace className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p className="font-semibold text-slate-600 dark:text-slate-300">No Face Photo Uploaded</p>
+                  <p className="text-[11px] text-slate-400 mt-1">This staff member enrolled with biometric descriptors only.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-slate-900 dark:text-white text-sm">{viewingPhotoStaff.name}</span>
+                <Badge variant={viewingPhotoStaff.registrationStatus === 'approved' ? 'success' : 'warning'}>
+                  {viewingPhotoStaff.registrationStatus === 'approved' ? 'Active Staff' : 'Pending Approval'}
+                </Badge>
+              </div>
+              <p className="text-slate-500">{viewingPhotoStaff.email} • {viewingPhotoStaff.phone}</p>
+              <p className="text-slate-500">Designation: <span className="font-semibold text-slate-700 dark:text-slate-300">{viewingPhotoStaff.designation || 'Staff'}</span></p>
+              <p className="text-slate-500">Bound Device: <span className="font-semibold text-slate-700 dark:text-slate-300">{viewingPhotoStaff.deviceModel || 'Mobile Device'}</span></p>
+            </div>
+
+            {/* Visual Duplicate Face Warning */}
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 rounded-xl">
+              <p className="font-semibold text-amber-900 dark:text-amber-300 mb-1 flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-amber-600" />
+                <span>Anti-Duplicate Verification</span>
+              </p>
+              <p className="text-amber-800 dark:text-amber-400 text-[11px] leading-relaxed">
+                Inspect this face photo carefully. If this face belongs to an existing staff member or was previously registered under a different name, reject this registration to prevent duplicate accounts.
+              </p>
+            </div>
+
+            {/* Other Active Staff Face Photos for Visual Comparison */}
+            {users.filter(u => u.id !== viewingPhotoStaff.id && u.avatarUrl).length > 0 && (
+              <div>
+                <h5 className="font-bold text-slate-700 dark:text-slate-300 mb-2">Compare With Registered Staff:</h5>
+                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-1">
+                  {users
+                    .filter(u => u.id !== viewingPhotoStaff.id && u.avatarUrl)
+                    .map(existing => (
+                      <div
+                        key={existing.id}
+                        className="flex items-center space-x-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-brand-500"
+                        title={`Click to inspect: ${existing.name} (${existing.designation})`}
+                        onClick={() => setViewingPhotoStaff(existing)}
+                      >
+                        <img
+                          src={existing.avatarUrl}
+                          alt={existing.name}
+                          className="w-7 h-7 rounded-full object-cover border border-slate-300 dark:border-slate-600"
+                        />
+                        <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300 max-w-[90px] truncate">
+                          {existing.name}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-between items-center">
+              {viewingPhotoStaff.registrationStatus === 'pending' && (
+                <Button
+                  variant="danger"
+                  size="xs"
+                  onClick={() => {
+                    const target = viewingPhotoStaff;
+                    setViewingPhotoStaff(null);
+                    handleOpenRejectStaffRegistration(target);
+                  }}
+                >
+                  Reject Duplicate Face
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="xs"
+                onClick={() => setViewingPhotoStaff(null)}
+                className="ml-auto"
+              >
+                Close
+              </Button>
             </div>
           </div>
         </Modal>

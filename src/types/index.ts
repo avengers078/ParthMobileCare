@@ -62,6 +62,7 @@ export interface StaffRegistrationDraft {
   emailVerified: boolean;
   sampleCount?: number;
   registeredAt: string;
+  avatarUrl?: string;
 }
 
 export interface StaffDeviceInfo {

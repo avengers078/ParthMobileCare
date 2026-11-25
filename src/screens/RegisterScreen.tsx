@@ -29,6 +29,9 @@ import {
   ArrowRight,
   ArrowLeft,
   RotateCcw,
+  Camera,
+  Image as ImageIcon,
+  UploadCloud,
 } from 'lucide-react-native';
 import {
   createUserWithEmailAndPassword,
@@ -39,6 +42,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { type AuthResult } from 'react-native-offline-face-auth';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 
 import { useTheme } from '../context/ThemeContext';
 import { useAlert } from '../context/AlertContext';
@@ -55,6 +59,7 @@ import { OnDeviceFaceAuthView } from '../components/OnDeviceFaceAuthView';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../theme';
 import FirebaseService from '../services/firebase';
 import { StorageService } from '../services/storageService';
+import { CloudinaryService } from '../services/cloudinaryService';
 import { DeviceSecurityService } from '../services/deviceSecurityService';
 import { FaceRecognitionService } from '../services/faceRecognitionService';
 import { safeCheckDuplicate, safeEnrollLocal } from '../services/onDeviceFaceAuth';
@@ -128,6 +133,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
   const [sessionKey, setSessionKey] = useState(1);
   const [sampleCount, setSampleCount] = useState(0);
   const [faceError, setFaceError] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const samplesRef = useRef<string[]>([]);
   const isCapturingRef = useRef(false);
   const isSubmittingRef = useRef(false);
@@ -141,6 +148,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
       if (registrationDraft.email && !email) setEmail(registrationDraft.email);
       if (registrationDraft.phone && !phone) setPhone(registrationDraft.phone);
       if (registrationDraft.designation && !designation) setDesignation(registrationDraft.designation);
+      if ((registrationDraft as any).avatarUrl && !avatarUrl) setAvatarUrl((registrationDraft as any).avatarUrl);
     }
 
     const currentAuth = FirebaseService.getAuth().currentUser;
@@ -318,6 +326,93 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
     }
   };
 
+  // Face Photo Capture & Cloudinary Upload for Admin Visual Verification
+  const handleTakePhoto = async () => {
+    try {
+      const res = await launchCamera({
+        mediaType: 'photo',
+        cameraType: 'front',
+        maxWidth: 800,
+        maxHeight: 800,
+        quality: 0.8,
+        saveToPhotos: false,
+      });
+
+      if (res.didCancel || !res.assets || res.assets.length === 0 || !res.assets[0].uri) {
+        return;
+      }
+
+      const file = res.assets[0];
+      const check = CloudinaryService.validateImageMeta(file.type || 'image/jpeg', file.fileSize);
+      if (!check.valid) {
+        showError('Invalid Image', check.error || 'Please choose an image under 5 MB.');
+        return;
+      }
+
+      setIsUploadingPhoto(true);
+      const auth = FirebaseService.getAuth();
+      const targetUid = createdUser?.uid || auth.currentUser?.uid || 'pending_staff';
+      const uploadRes = await CloudinaryService.uploadImage(file.uri, {
+        folder: 'avatars',
+        tags: ['staff_avatar', targetUid],
+      });
+
+      if (uploadRes.success && uploadRes.secureUrl) {
+        setAvatarUrl(uploadRes.secureUrl);
+        await saveRegistrationProgress({ avatarUrl: uploadRes.secureUrl } as any);
+        showSuccess('Photo Uploaded', 'Staff face photo uploaded to Cloudinary successfully.');
+      } else {
+        showError('Upload Failed', uploadRes.error || 'Failed to upload photo to Cloudinary.');
+      }
+    } catch (err: any) {
+      showError('Camera Error', err?.message || 'Failed to access camera.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const handlePickPhoto = async () => {
+    try {
+      const res = await launchImageLibrary({
+        mediaType: 'photo',
+        maxWidth: 800,
+        maxHeight: 800,
+        quality: 0.8,
+      });
+
+      if (res.didCancel || !res.assets || res.assets.length === 0 || !res.assets[0].uri) {
+        return;
+      }
+
+      const file = res.assets[0];
+      const check = CloudinaryService.validateImageMeta(file.type || 'image/jpeg', file.fileSize);
+      if (!check.valid) {
+        showError('Invalid Image', check.error || 'Please choose an image under 5 MB.');
+        return;
+      }
+
+      setIsUploadingPhoto(true);
+      const auth = FirebaseService.getAuth();
+      const targetUid = createdUser?.uid || auth.currentUser?.uid || 'pending_staff';
+      const uploadRes = await CloudinaryService.uploadImage(file.uri, {
+        folder: 'avatars',
+        tags: ['staff_avatar', targetUid],
+      });
+
+      if (uploadRes.success && uploadRes.secureUrl) {
+        setAvatarUrl(uploadRes.secureUrl);
+        await saveRegistrationProgress({ avatarUrl: uploadRes.secureUrl } as any);
+        showSuccess('Photo Uploaded', 'Staff face photo uploaded to Cloudinary successfully.');
+      } else {
+        showError('Upload Failed', uploadRes.error || 'Failed to upload photo to Cloudinary.');
+      }
+    } catch (err: any) {
+      showError('Gallery Error', err?.message || 'Failed to select image.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
   // Step 3: Handle Face Capture
   const handleFaceCaptureResult = async (result: AuthResult) => {
     const auth = FirebaseService.getAuth();
@@ -423,10 +518,12 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
         throw new Error('Biometric data read-back verification failed on this device. Please retry face enrollment.');
       }
 
-      await saveRegistrationProgress({ step: 'submitting', sampleCount: REQUIRED_SAMPLES });
-
-      // Advance to Step 4: Submission
-      await handleSubmitRegistration(activeUser);
+      await saveRegistrationProgress({ step: 'face_enrollment', sampleCount: REQUIRED_SAMPLES });
+      setLoading(false);
+      showSuccess(
+        'Face Samples Verified',
+        'All 3 biometric face samples recorded! Please take or choose your front face photo for Administrator review.'
+      );
     } catch (err: any) {
       setFaceError(err?.message || 'Failed to process face sample.');
       isCapturingRef.current = false;
@@ -605,6 +702,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
         faceRegistrationDate: nowIso,
         // Store face descriptor in Firestore for cross-device duplicate detection
         faceDescriptor: faceDescriptorRef.current.length > 0 ? faceDescriptorRef.current : [],
+        // Store Cloudinary face avatar URL for Admin visual verification
+        avatarUrl: avatarUrl || (activeDraft as any)?.avatarUrl || '',
         deviceId,
         deviceModel,
         devicePlatform,
@@ -989,21 +1088,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
                     </View>
                   ) : null}
 
-                  {sampleCount >= REQUIRED_SAMPLES ? (
-                    <View style={{ width: '100%', marginBottom: SPACING.sm }}>
-                      <PrimaryButton
-                        title="Submit Registration"
-                        onPress={() => {
-                          const auth = FirebaseService.getAuth();
-                          const activeUser = auth.currentUser || createdUser;
-                          if (activeUser) handleSubmitRegistration(activeUser);
-                        }}
-                        loading={loading}
-                        size="large"
-                      />
-                    </View>
-                  ) : null}
-
                   {sampleCount < REQUIRED_SAMPLES ? (
                     <View style={styles.cameraFrame}>
                       <OnDeviceFaceAuthView
@@ -1022,22 +1106,121 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
                       />
                     </View>
                   ) : (
-                    <View
-                      style={[
-                        styles.cameraFinishedBox,
-                        {
-                          backgroundColor: isDark ? 'rgba(22,163,74,0.1)' : '#F0FDF4',
-                          borderColor: '#16A34A',
-                        },
-                      ]}
-                    >
-                      <CheckCircle size={48} color="#16A34A" />
-                      <Text style={[styles.completedTitle, { color: colors.text }]}>
-                        Face Verification Complete
-                      </Text>
-                      <Text style={[styles.completedText, { color: colors.textSecondary }]}>
-                        All 3 face samples verified and encrypted on this device. Camera has been safely closed.
-                      </Text>
+                    <View style={{ width: '100%' }}>
+                      <View
+                        style={[
+                          styles.cameraFinishedBox,
+                          {
+                            backgroundColor: isDark ? 'rgba(22,163,74,0.1)' : '#F0FDF4',
+                            borderColor: '#16A34A',
+                          },
+                        ]}
+                      >
+                        <CheckCircle size={40} color="#16A34A" />
+                        <Text style={[styles.completedTitle, { color: colors.text }]}>
+                          Face Verification Complete
+                        </Text>
+                        <Text style={[styles.completedText, { color: colors.textSecondary }]}>
+                          All 3 on-device biometric samples verified and encrypted on this device.
+                        </Text>
+                      </View>
+
+                      {/* Staff Identity Photo for Admin Visual Verification */}
+                      <View
+                        style={[
+                          styles.photoSection,
+                          { backgroundColor: colors.background, borderColor: colors.border },
+                        ]}
+                      >
+                        <Text style={[styles.photoTitle, { color: colors.text }]}>
+                          Administrator Verification Photo
+                        </Text>
+                        <Text style={[styles.photoDesc, { color: colors.textSecondary }]}>
+                          A clear front face photo will be stored in Cloudinary for the store administrator to visually verify and approve your registration.
+                        </Text>
+
+                        {avatarUrl ? (
+                          <View style={{ alignItems: 'center', marginVertical: SPACING.xs }}>
+                            <Image source={{ uri: avatarUrl }} style={styles.photoPreview} />
+                            <View style={styles.photoBadge}>
+                              <CheckCircle size={14} color="#166534" />
+                              <Text style={styles.photoBadgeText}>Photo Uploaded to Cloudinary</Text>
+                            </View>
+                            <View style={styles.photoBtnRow}>
+                              <TouchableOpacity
+                                style={[styles.photoBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                onPress={handleTakePhoto}
+                                disabled={isUploadingPhoto}
+                              >
+                                <Camera size={16} color={colors.primary} />
+                                <Text style={[styles.photoBtnText, { color: colors.text }]}>Retake Photo</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.photoBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                onPress={handlePickPhoto}
+                                disabled={isUploadingPhoto}
+                              >
+                                <ImageIcon size={16} color={colors.primary} />
+                                <Text style={[styles.photoBtnText, { color: colors.text }]}>Choose Other</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={{ alignItems: 'center', marginVertical: SPACING.xs }}>
+                            {isUploadingPhoto ? (
+                              <View style={styles.uploadingBox}>
+                                <ActivityIndicator size="small" color={colors.primary} />
+                                <Text style={[styles.uploadingText, { color: colors.textSecondary }]}>
+                                  Uploading face photo to Cloudinary...
+                                </Text>
+                              </View>
+                            ) : (
+                              <>
+                                <View style={styles.photoPlaceholder}>
+                                  <Camera size={36} color="#94A3B8" />
+                                </View>
+                                <View style={styles.photoBtnRow}>
+                                  <TouchableOpacity
+                                    style={[styles.photoPrimaryBtn, { backgroundColor: colors.primary }]}
+                                    onPress={handleTakePhoto}
+                                  >
+                                    <Camera size={16} color="#FFFFFF" />
+                                    <Text style={styles.photoPrimaryBtnText}>Take Face Photo</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    style={[styles.photoBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                    onPress={handlePickPhoto}
+                                  >
+                                    <ImageIcon size={16} color={colors.primary} />
+                                    <Text style={[styles.photoBtnText, { color: colors.text }]}>Choose Photo</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </>
+                            )}
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Submit Registration Button */}
+                      <View style={{ width: '100%', marginTop: SPACING.xs, marginBottom: SPACING.sm }}>
+                        <PrimaryButton
+                          title="Submit Registration"
+                          onPress={() => {
+                            if (!avatarUrl) {
+                              showWarning(
+                                'Face Photo Recommended',
+                                'Please take or choose a front face photo so the store administrator can verify your identity.'
+                              );
+                              return;
+                            }
+                            const auth = FirebaseService.getAuth();
+                            const activeUser = auth.currentUser || createdUser;
+                            if (activeUser) handleSubmitRegistration(activeUser);
+                          }}
+                          loading={loading}
+                          size="large"
+                        />
+                      </View>
                     </View>
                   )}
                 </View>
@@ -1317,6 +1500,100 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  photoSection: {
+    width: '100%',
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginVertical: SPACING.sm,
+  },
+  photoTitle: {
+    ...TYPOGRAPHY.subtitleSmall,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  photoDesc: {
+    ...TYPOGRAPHY.captionSmall,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: SPACING.xs,
+  },
+  photoPreview: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    borderWidth: 3,
+    borderColor: '#16A34A',
+    marginBottom: SPACING.xs,
+  },
+  photoPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.xs,
+  },
+  photoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginBottom: SPACING.xs,
+    gap: 4,
+  },
+  photoBadgeText: {
+    color: '#166534',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  photoBtnRow: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+    width: '100%',
+    justifyContent: 'center',
+    marginTop: SPACING.xs,
+  },
+  photoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+  },
+  photoBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  photoPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: RADIUS.md,
+  },
+  photoPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  uploadingBox: {
+    padding: SPACING.md,
+    alignItems: 'center',
+    gap: 8,
+  },
+  uploadingText: {
+    fontSize: 12,
   },
   submittingTitle: {
     ...TYPOGRAPHY.titleSmall,
