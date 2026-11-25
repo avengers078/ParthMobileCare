@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   Smartphone,
   Plus,
@@ -126,12 +126,16 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
   const [purchaseBackFile, setPurchaseBackFile] = useState<File | null>(null);
   const [saleAadhaarFile, setSaleAadhaarFile] = useState<File | null>(null);
 
-  const loadData = async () => {
+  // Track whether initial real-time data has been received
+  const purchasesReceivedRef = useRef(false);
+  const salesReceivedRef = useRef(false);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [p, s, cfg] = await Promise.all([
-        ApiService.getSecondHandPurchases(),
-        ApiService.getSecondHandSales(),
+        ApiService.getSecondHandPurchases(true),
+        ApiService.getSecondHandSales(true),
         ApiService.getShopConfig(),
       ]);
       setPurchases(p);
@@ -142,10 +146,59 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
+  // Initial data load + real-time Firestore listeners for live sync
   useEffect(() => {
-    loadData();
+    // Load shop config (not real-time, rarely changes)
+    ApiService.getShopConfig().then(cfg => setShopConfig(cfg)).catch(() => {});
+
+    // Subscribe to real-time purchase updates from Firestore
+    const unsubPurchases = ApiService.subscribeToSecondHandPurchases(
+      (livePurchases) => {
+        setPurchases(livePurchases);
+        purchasesReceivedRef.current = true;
+        if (salesReceivedRef.current) setLoading(false);
+      },
+      (err) => {
+        console.warn('[SecondHandPage] Purchase listener error, falling back to fetch:', err);
+        ApiService.getSecondHandPurchases(true).then(p => {
+          setPurchases(p);
+          purchasesReceivedRef.current = true;
+          if (salesReceivedRef.current) setLoading(false);
+        }).catch(() => setLoading(false));
+      }
+    );
+
+    // Subscribe to real-time sale updates from Firestore
+    const unsubSales = ApiService.subscribeToSecondHandSales(
+      (liveSales) => {
+        setSales(liveSales);
+        salesReceivedRef.current = true;
+        if (purchasesReceivedRef.current) setLoading(false);
+      },
+      (err) => {
+        console.warn('[SecondHandPage] Sale listener error, falling back to fetch:', err);
+        ApiService.getSecondHandSales(true).then(s => {
+          setSales(s);
+          salesReceivedRef.current = true;
+          if (purchasesReceivedRef.current) setLoading(false);
+        }).catch(() => setLoading(false));
+      }
+    );
+
+    // Safety timeout: if real-time data hasn't arrived in 8 seconds, fall back
+    const safetyTimeout = setTimeout(() => {
+      if (!purchasesReceivedRef.current || !salesReceivedRef.current) {
+        loadData();
+      }
+    }, 8000);
+
+    return () => {
+      unsubPurchases();
+      unsubSales();
+      clearTimeout(safetyTimeout);
+    };
   }, []);
 
   useEffect(() => {

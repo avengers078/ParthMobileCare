@@ -13,6 +13,7 @@ import {
   Timestamp,
   writeBatch,
   deleteField,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db, auth, FIRESTORE_COLLECTIONS } from './firebase';
 import {
@@ -569,6 +570,93 @@ export class ApiService {
       console.warn('[AdminApi] Failed to fetch Sale KYC record:', e);
       return null;
     }
+  }
+
+  /**
+   * Real-time listener for second-hand purchases.
+   * Returns an unsubscribe function to detach the listener.
+   */
+  static subscribeToSecondHandPurchases(
+    onUpdate: (purchases: SecondHandPurchase[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const q = query(collection(db, FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES), orderBy('purchaseDate', 'desc'));
+    return onSnapshot(q, async (snap) => {
+      try {
+        const purchases = await Promise.all(
+          snap.docs.map(async d => {
+            const data = d.data();
+            let customerName = data.customerName || (data as any).sellerName || (data as any).customer || '';
+            let phone = data.phone || (data as any).sellerPhone || (data as any).contact || '';
+            let deviceInspectionPhotos: string[] = data.deviceInspectionPhotos || data.devicePhotos || [];
+            let billImageUri: string = data.billImageUri || '';
+
+            if (!customerName || !billImageUri || deviceInspectionPhotos.length === 0) {
+              try {
+                const kycSnap = await getDoc(doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, d.id, 'kyc_sensitive', 'record'));
+                if (kycSnap.exists()) {
+                  const kycData = kycSnap.data();
+                  if (!customerName) customerName = kycData.customerName || kycData.sellerName || '';
+                  if (!phone) phone = kycData.phone || '';
+                  if (!billImageUri) billImageUri = kycData.billImageUri || '';
+                  if (deviceInspectionPhotos.length === 0 && kycData.customerPhotoUri) {
+                    try {
+                      if (kycData.customerPhotoUri.startsWith('[')) {
+                        deviceInspectionPhotos = JSON.parse(kycData.customerPhotoUri);
+                      } else if (kycData.customerPhotoUri.startsWith('http')) {
+                        deviceInspectionPhotos = [kycData.customerPhotoUri];
+                      }
+                    } catch { /* ignore */ }
+                  }
+                }
+              } catch { /* ignore subcollection read error */ }
+            }
+
+            return {
+              ...data,
+              id: d.id,
+              customerName: customerName || (data.hasSensitiveKyc ? 'Verified Seller (KYC)' : 'Name unavailable'),
+              phone: phone || '—',
+              deviceInspectionPhotos,
+              devicePhotos: deviceInspectionPhotos,
+              billImageUri,
+            } as SecondHandPurchase;
+          })
+        );
+        this.invalidateCache('purchases');
+        onUpdate(purchases);
+      } catch (err) {
+        console.warn('[AdminApi] Error processing purchase snapshot:', err);
+        onError?.(err);
+      }
+    }, (err) => {
+      console.warn('[AdminApi] Purchase snapshot listener error:', err);
+      onError?.(err);
+    });
+  }
+
+  /**
+   * Real-time listener for second-hand sales.
+   * Returns an unsubscribe function to detach the listener.
+   */
+  static subscribeToSecondHandSales(
+    onUpdate: (sales: SecondHandSale[]) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const q = query(collection(db, FIRESTORE_COLLECTIONS.SECOND_HAND_SALES), orderBy('saleDate', 'desc'));
+    return onSnapshot(q, (snap) => {
+      try {
+        const sales = snap.docs.map(d => ({ ...d.data(), id: d.id } as SecondHandSale));
+        this.invalidateCache('sales');
+        onUpdate(sales);
+      } catch (err) {
+        console.warn('[AdminApi] Error processing sale snapshot:', err);
+        onError?.(err);
+      }
+    }, (err) => {
+      console.warn('[AdminApi] Sale snapshot listener error:', err);
+      onError?.(err);
+    });
   }
 
   static async saveSecondHandSale(sale: SecondHandSale, adminUser?: { id: string; name: string }): Promise<void> {

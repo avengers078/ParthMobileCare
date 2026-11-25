@@ -829,12 +829,21 @@ export class StorageService {
         hasSensitiveKyc: true,
         _syncedAt: new Date().toISOString(),
       };
-      FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, purchase.id, parentInventoryDoc).catch(err => {
+
+      // IMPORTANT: Await the parent document write BEFORE the KYC subcollection write.
+      // Firestore security rules require the parent document to exist() for KYC create.
+      let parentSynced = false;
+      try {
+        parentSynced = await FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, purchase.id, parentInventoryDoc);
+        if (!parentSynced) {
+          console.warn('[StorageService] Parent purchase sync returned false (Firestore not ready). KYC will be skipped.');
+        }
+      } catch (err) {
         console.warn('[StorageService] Error syncing purchase parent inventory:', err);
-      });
+      }
 
       // Sensitive customer identity, Aadhaar, inspection photos, and digital signature stored in Admin-only subcollection
-      if (purchase.customerName || purchase.aadhaarNumber || purchase.digitalSignatureUri || (purchase.deviceInspectionPhotos && purchase.deviceInspectionPhotos.length > 0) || (purchase.devicePhotos && purchase.devicePhotos.length > 0)) {
+      if (parentSynced && (purchase.customerName || purchase.aadhaarNumber || purchase.digitalSignatureUri || (purchase.deviceInspectionPhotos && purchase.deviceInspectionPhotos.length > 0) || (purchase.devicePhotos && purchase.devicePhotos.length > 0))) {
         const inspectionPhotos = purchase.deviceInspectionPhotos || purchase.devicePhotos || [];
         const customerPhotoValue = inspectionPhotos.length > 0
           ? JSON.stringify(inspectionPhotos)
@@ -925,10 +934,21 @@ export class StorageService {
       hasSensitiveKyc: !!sale.aadhaarNumber,
       _syncedAt: new Date().toISOString(),
     };
-    FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, sale.id, parentSaleDoc).catch(() => {});
+
+    // IMPORTANT: Await the parent document write BEFORE the KYC subcollection write.
+    // Firestore security rules require the parent document to exist() for KYC create.
+    let parentSynced = false;
+    try {
+      parentSynced = await FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, sale.id, parentSaleDoc);
+      if (!parentSynced) {
+        console.warn('[StorageService] Parent sale sync returned false (Firestore not ready). KYC will be skipped.');
+      }
+    } catch (err) {
+      console.warn('[StorageService] Error syncing sale parent document:', err);
+    }
 
     // Sensitive buyer KYC subcollection (Admin-only read)
-    if (sale.aadhaarNumber || sale.buyerPhotoUri || sale.aadhaarPhotoUri) {
+    if (parentSynced && (sale.aadhaarNumber || sale.buyerPhotoUri || sale.aadhaarPhotoUri)) {
       const kycDoc = {
         id: 'record',
         saleId: sale.id,
@@ -951,7 +971,9 @@ export class StorageService {
         `${FIRESTORE_COLLECTIONS.SECOND_HAND_SALES}/${sale.id}/kyc_sensitive`,
         'record',
         kycDoc
-      ).catch(() => {});
+      ).catch(err => {
+        console.warn('[StorageService] Error syncing sale kyc_sensitive:', err);
+      });
     }
 
     // Update purchase record status to 'sold' if linked
@@ -961,7 +983,9 @@ export class StorageService {
       if (pIdx >= 0) {
         purchases[pIdx].status = 'sold';
         await AsyncStorage.setItem(STORAGE_KEYS.SECOND_HAND_PURCHASES, JSON.stringify(purchases));
-        FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, purchases[pIdx].id, purchases[pIdx]).catch(() => {});
+        // Send ONLY inventory-safe parent fields (not the full object with sensitive KYC data)
+        const sanitizedPurchase = FirestoreSyncService.sanitizePurchaseForParent(purchases[pIdx]);
+        FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, purchases[pIdx].id, sanitizedPurchase).catch(() => {});
       }
     }
   }

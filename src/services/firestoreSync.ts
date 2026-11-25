@@ -50,7 +50,10 @@ export class FirestoreSyncService {
     try {
       const db = FirebaseService.getFirestore();
       const fLib = getFirestoreLib();
-      if (!db || !fLib) return false;
+      if (!db || !fLib) {
+        console.warn(`[FirestoreSync] Firestore not ready – skipping write to ${collectionName}/${docId}`);
+        return false;
+      }
 
       // Remove undefined fields and local-only flags to prevent Firestore serialization errors
       const sanitized = JSON.parse(JSON.stringify(data));
@@ -63,6 +66,64 @@ export class FirestoreSyncService {
       console.warn(`[FirestoreSync] Write error for ${collectionName}/${docId}:`, e?.message || e);
       throw e;
     }
+  }
+
+  /**
+   * Extract ONLY the inventory-safe fields from a purchase record for the parent document.
+   * This avoids Firestore rules rejection when `hasOnly(allowed)` is enforced.
+   */
+  static sanitizePurchaseForParent(pur: any): Record<string, any> {
+    return {
+      id: pur.id,
+      brand: pur.brand,
+      model: pur.model,
+      ram: pur.ram || '',
+      storage: pur.storage || '',
+      imei: pur.imei,
+      condition: pur.condition,
+      purchaseAmount: pur.purchaseAmount,
+      purchaseDate: pur.purchaseDate,
+      purchaseTime: pur.purchaseTime,
+      purchasedByStaffId: pur.purchasedByStaffId,
+      purchasedByStaffName: pur.purchasedByStaffName,
+      status: pur.status,
+      notes: pur.notes || '',
+      hasSensitiveKyc: true,
+      _syncedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Extract ONLY the sale-safe fields from a sale record for the parent document.
+   */
+  static sanitizeSaleForParent(sale: any): Record<string, any> {
+    return {
+      id: sale.id,
+      purchaseRecordId: sale.purchaseRecordId || '',
+      buyerName: sale.buyerName,
+      phone: sale.phone,
+      address: sale.address,
+      brand: sale.brand,
+      model: sale.model,
+      ram: sale.ram || '',
+      storage: sale.storage || '',
+      imei: sale.imei,
+      sellingAmount: sale.sellingAmount,
+      purchaseAmount: sale.purchaseAmount,
+      profitAmount: sale.profitAmount,
+      marginPercent: sale.marginPercent,
+      invoiceNumber: sale.invoiceNumber,
+      digitalSignatureUri: sale.digitalSignatureUri,
+      saleDate: sale.saleDate,
+      saleTime: sale.saleTime,
+      soldByStaffId: sale.soldByStaffId,
+      soldByStaffName: sale.soldByStaffName,
+      paymentMethod: sale.paymentMethod,
+      warrantyMonths: sale.warrantyMonths || 0,
+      notes: sale.notes || '',
+      hasSensitiveKyc: !!(sale.aadhaarNumber || sale.buyerPhotoUri || sale.aadhaarPhotoUri),
+      _syncedAt: new Date().toISOString(),
+    };
   }
 
   /**
@@ -341,12 +402,13 @@ export class FirestoreSyncService {
       }
       details[FIRESTORE_COLLECTIONS.MOBILE_PRICES] = priceCount;
 
-      // 5. Second Hand Purchases
+      // 5. Second Hand Purchases – sync ONLY inventory-safe parent fields
       const purchases = await StorageService.getPurchases();
       expectedCount += purchases.length;
       let purCount = 0;
       for (const pur of purchases) {
-        const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, pur.id, pur);
+        const parentDoc = this.sanitizePurchaseForParent(pur);
+        const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, pur.id, parentDoc);
         if (ok) {
           syncedCount++;
           purCount++;
@@ -354,12 +416,13 @@ export class FirestoreSyncService {
       }
       details[FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES] = purCount;
 
-      // 6. Second Hand Sales
+      // 6. Second Hand Sales – sync ONLY sale-safe parent fields
       const sales = await StorageService.getSales();
       expectedCount += sales.length;
       let saleCount = 0;
       for (const s of sales) {
-        const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, s.id, s);
+        const parentDoc = this.sanitizeSaleForParent(s);
+        const ok = await this.syncDocument(FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, s.id, parentDoc);
         if (ok) {
           syncedCount++;
           saleCount++;
