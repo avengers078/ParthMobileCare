@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { onSnapshot, query, collection, orderBy, limit } from 'firebase/firestore';
+import { db, FIRESTORE_COLLECTIONS } from '../services/firebase';
 import {
   CalendarCheck,
   Search,
@@ -43,9 +45,17 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({ initialParams, o
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters
-  const [dateMode, setDateMode] = useState<'single' | 'range'>('single');
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const getLocalDateString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Filters: Default to 'all' so all attendance records are immediately visible
+  const [dateMode, setDateMode] = useState<'single' | 'range' | 'all'>('all');
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalDateString);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('all');
@@ -86,6 +96,35 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({ initialParams, o
 
   useEffect(() => {
     loadData();
+
+    // Real-time Firestore sync listener for instant mobile punch detection
+    let unsubscribe: (() => void) | null = null;
+    try {
+      const q = query(
+        collection(db, FIRESTORE_COLLECTIONS.ATTENDANCE),
+        orderBy('date', 'desc'),
+        limit(300)
+      );
+      unsubscribe = onSnapshot(
+        q,
+        (snap) => {
+          if (!snap.empty) {
+            const liveRecords = snap.docs.map(d => ({ ...d.data(), id: d.id } as AttendanceRecord));
+            setRecords(liveRecords);
+            setLoading(false);
+          }
+        },
+        (err) => {
+          console.warn('[AttendancePage] Real-time listener note:', err?.message);
+        }
+      );
+    } catch (e) {
+      console.warn('[AttendancePage] Real-time listener init error:', e);
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -108,27 +147,32 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({ initialParams, o
   }, [initialParams, records, loading]);
 
   // Quick Date Shortcut Helpers
-  const setQuickDate = (type: 'today' | 'yesterday' | 'week' | 'month') => {
+  const setQuickDate = (type: 'all' | 'today' | 'yesterday' | 'week' | 'month') => {
     const now = new Date();
-    if (type === 'today') {
+    if (type === 'all') {
+      setDateMode('all');
+    } else if (type === 'today') {
       setDateMode('single');
-      setSelectedDate(now.toISOString().slice(0, 10));
+      setSelectedDate(getLocalDateString());
     } else if (type === 'yesterday') {
       setDateMode('single');
       const y = new Date(now.getTime() - 86400000);
-      setSelectedDate(y.toISOString().slice(0, 10));
+      const year = y.getFullYear();
+      const month = String(y.getMonth() + 1).padStart(2, '0');
+      const day = String(y.getDate()).padStart(2, '0');
+      setSelectedDate(`${year}-${month}-${day}`);
     } else if (type === 'week') {
       setDateMode('range');
       const day = now.getDay();
       const diffToMonday = now.getDate() - day + (day === 0 ? -6 : 1);
       const monday = new Date(now.setDate(diffToMonday));
       setStartDate(monday.toISOString().slice(0, 10));
-      setEndDate(new Date().toISOString().slice(0, 10));
+      setEndDate(getLocalDateString());
     } else if (type === 'month') {
       setDateMode('range');
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
       setStartDate(firstDay.toISOString().slice(0, 10));
-      setEndDate(new Date().toISOString().slice(0, 10));
+      setEndDate(getLocalDateString());
     }
   };
 
@@ -179,7 +223,7 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({ initialParams, o
       let matchDate = true;
       if (dateMode === 'single') {
         matchDate = !selectedDate || r.date === selectedDate;
-      } else {
+      } else if (dateMode === 'range') {
         if (startDate && r.date < startDate) matchDate = false;
         if (endDate && r.date > endDate) matchDate = false;
       }
@@ -286,8 +330,23 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({ initialParams, o
               <div className="flex items-center space-x-1 bg-slate-100 dark:bg-[#0D1729] p-1 rounded-xl border border-transparent dark:border-[#24344D]">
                 <button
                   type="button"
+                  onClick={() => setQuickDate('all')}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                    dateMode === 'all'
+                      ? 'bg-brand-600 text-white shadow-xs'
+                      : 'hover:bg-white dark:hover:bg-[#1C2A42] text-slate-600 dark:text-[#94A3B8]'
+                  }`}
+                >
+                  All Records
+                </button>
+                <button
+                  type="button"
                   onClick={() => setQuickDate('today')}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-lg hover:bg-white dark:hover:bg-[#1C2A42] text-slate-600 dark:text-[#94A3B8] transition-colors"
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                    dateMode === 'single' && selectedDate === getLocalDateString()
+                      ? 'bg-brand-600 text-white shadow-xs'
+                      : 'hover:bg-white dark:hover:bg-[#1C2A42] text-slate-600 dark:text-[#94A3B8]'
+                  }`}
                 >
                   Today
                 </button>
@@ -343,12 +402,16 @@ export const AttendancePage: React.FC<AttendancePageProps> = ({ initialParams, o
               <div className="flex flex-col sm:flex-row sm:items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setDateMode(dateMode === 'single' ? 'range' : 'single')}
+                  onClick={() => setDateMode(dateMode === 'all' ? 'single' : dateMode === 'single' ? 'range' : 'all')}
                   className="h-10 px-3 text-[11px] font-bold rounded-xl border border-slate-200 dark:border-[#24344D] bg-slate-50 dark:bg-[#17243A] text-slate-600 dark:text-[#94A3B8] hover:bg-slate-100 dark:hover:bg-[#1C2A42] shrink-0 transition-colors self-start sm:self-auto"
                 >
-                  {dateMode === 'single' ? '1 Day' : 'Range'}
+                  {dateMode === 'all' ? 'All Dates' : dateMode === 'single' ? '1 Day' : 'Range'}
                 </button>
-                {dateMode === 'single' ? (
+                {dateMode === 'all' ? (
+                  <div className="flex-1 w-full min-w-0 h-10 rounded-xl border border-dashed border-slate-300 dark:border-[#24344D] bg-slate-50/50 dark:bg-[#0D1729]/50 flex items-center px-3">
+                    <span className="text-xs text-slate-500 dark:text-[#94A3B8]">Showing attendance records across all dates</span>
+                  </div>
+                ) : dateMode === 'single' ? (
                   <input
                     type="date"
                     value={selectedDate}

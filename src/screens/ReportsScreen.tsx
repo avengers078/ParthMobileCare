@@ -102,13 +102,17 @@ export const ReportsScreen: React.FC = () => {
         staffId: selectedStaffId,
       };
 
-      // Parallelize all independent data fetches
+      // Parallelize all independent data fetches with 6-second timeout safeguard
       const currentMonthKey = getTodayDateString().substring(0, 7);
-      const [fullData, users, payroll] = await Promise.all([
+      const reportPromise = Promise.all([
         ReportExportService.getFullReportData(currentUser, isAdmin, false, filterOpts),
         StorageService.getAllUsers(),
         PayrollService.getMonthlyPayroll(currentMonthKey),
       ]);
+      const timeoutPromise = new Promise<any[]>((_, reject) =>
+        setTimeout(() => reject(new Error('Reports data loading timed out after 6 seconds.')), 6000)
+      );
+      const [fullData, users, payroll] = (await Promise.race([reportPromise, timeoutPromise])) as [any, any[], any];
 
       setBuySellStats(fullData.summaryData.buySellStats);
       setLeadStats(fullData.summaryData.leadStats);

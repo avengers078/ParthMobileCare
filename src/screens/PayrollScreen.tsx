@@ -59,8 +59,31 @@ export const PayrollScreen: React.FC<PayrollScreenProps> = ({ navigation }) => {
   const loadPayroll = async () => {
     setIsLoading(true);
     try {
-      const summary = await PayrollService.getMonthlyPayroll(selectedMonthKey);
-      setPayrollData(summary);
+      const payrollPromise = PayrollService.getMonthlyPayroll(selectedMonthKey);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+      const summary = await Promise.race([payrollPromise, timeoutPromise]);
+      if (summary) {
+        setPayrollData(summary);
+      } else {
+        const cached = await StorageService.getSalarySlips().catch(() => []);
+        if (cached && cached.length > 0) {
+          // Fallback minimal summary from cached slips
+          const matching = cached.filter(s => s.monthKey === selectedMonthKey);
+          if (matching.length > 0) {
+            setPayrollData({
+              monthKey: selectedMonthKey,
+              monthName: matching[0]?.month || selectedMonthKey,
+              totalPayable: matching.reduce((sum, s) => sum + (s.netSalary || 0), 0),
+              totalPaid: matching.filter(s => s.isPaid).reduce((sum, s) => sum + (s.netSalary || 0), 0),
+              totalPending: matching.filter(s => !s.isPaid).reduce((sum, s) => sum + (s.netSalary || 0), 0),
+              totalStaffCount: matching.length,
+              paidStaffCount: matching.filter(s => s.isPaid).length,
+              pendingStaffCount: matching.filter(s => !s.isPaid).length,
+              slips: matching,
+            });
+          }
+        }
+      }
     } catch (e: any) {
       showError('Payroll Failed', e?.message || 'Failed to load payroll data.');
     } finally {

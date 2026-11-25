@@ -464,11 +464,12 @@ export class AttendanceService {
       totalHours: workingHours,
       isEarlyExit: early,
       status: workingHours < 4 ? 'half_day' : todayRecord.status,
-      verificationMethod: 'face_recognition',
-      faceVerificationScore: verificationToken?.similarityScore,
-      faceLivenessScore: verificationToken?.livenessScore,
-      faceVerificationTokenId: verificationToken?.tokenId,
-      deviceId: deviceCheck.currentDeviceId,
+      // Strictly preserve immutable punch-in biometric metadata so Firestore update affectedKeys() check succeeds
+      verificationMethod: todayRecord.verificationMethod || 'face_recognition',
+      faceVerificationScore: todayRecord.faceVerificationScore,
+      faceLivenessScore: todayRecord.faceLivenessScore,
+      faceVerificationTokenId: todayRecord.faceVerificationTokenId,
+      deviceId: todayRecord.deviceId || deviceCheck.currentDeviceId,
     };
 
     await StorageService.saveAttendanceRecord(updatedRecord);

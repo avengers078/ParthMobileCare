@@ -168,6 +168,8 @@ export class FaceRecognitionService {
     approvedByAdminId?: string;
     approvedByAdminName?: string;
     deviceInfo?: FaceDeviceInfo;
+    sampleEmbeddingB64?: string;
+    faceDescriptor?: number[];
   }): Promise<{ success: boolean; template?: FaceTemplate; error?: string }> {
     if (!params.consentObtained) {
       return { success: false, error: 'Explicit informed consent is required to register biometric face data.' };
@@ -183,18 +185,36 @@ export class FaceRecognitionService {
     const approvalStatus: FaceApprovalStatus = params.approvalStatus ?? 'pending';
     const nowIso = new Date().toISOString();
 
+    let computedDescriptor: number[] = params.faceDescriptor || [];
+    if (computedDescriptor.length === 0 && params.sampleEmbeddingB64) {
+      try {
+        const bin = typeof globalThis.atob === 'function'
+          ? globalThis.atob(params.sampleEmbeddingB64)
+          : typeof Buffer !== 'undefined'
+          ? Buffer.from(params.sampleEmbeddingB64, 'base64').toString('binary')
+          : '';
+        if (bin) {
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const floatArr = new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
+          computedDescriptor = Array.from(floatArr);
+        }
+      } catch {
+        computedDescriptor = [];
+      }
+    }
+
     const template: FaceTemplate = {
       id: `tmpl_${params.userId}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       userId: params.userId,
       userName: params.userName,
-      // Embeddings are stored only in FaceAuth's encrypted native store.
-      faceDescriptor: [],
+      faceDescriptor: computedDescriptor,
       qualityScore: 0.95,
       registeredAt: nowIso,
       registeredBy: params.registeredBy,
       consentObtained: true,
       consentTimestamp: nowIso,
-      templateHash: computeTemplateHash([]),
+      templateHash: computeTemplateHash(computedDescriptor),
       sampleCount: params.sampleCount,
       status: 'active',
       approvalStatus,

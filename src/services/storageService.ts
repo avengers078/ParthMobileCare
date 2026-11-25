@@ -626,7 +626,11 @@ export class StorageService {
     }
     StorageService.memoryCache.set(STORAGE_KEYS.ATTENDANCE, records);
     await AsyncStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
-    FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.ATTENDANCE, record.id, record).catch(() => {});
+    try {
+      await FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.ATTENDANCE, record.id, record);
+    } catch (syncErr: any) {
+      if (__DEV__) console.warn('[StorageService] Attendance cloud sync warning:', syncErr?.message || syncErr);
+    }
   }
 
   // --- Customer Leads ---

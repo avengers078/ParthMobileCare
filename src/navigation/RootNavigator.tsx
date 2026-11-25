@@ -203,6 +203,19 @@ const MainTabs: React.FC = React.memo(() => {
 export const RootNavigator: React.FC = () => {
   const { currentUser, authStatus, isLoading, authError, retryAuth, logout, restartRegistration } = useAuth();
   const { colors } = useTheme();
+  const [loadingSlow, setLoadingSlow] = React.useState(false);
+
+  React.useEffect(() => {
+    let t: any = null;
+    if (isLoading) {
+      t = setTimeout(() => setLoadingSlow(true), 4000);
+    } else {
+      setLoadingSlow(false);
+    }
+    return () => {
+      if (t) clearTimeout(t);
+    };
+  }, [isLoading]);
 
   React.useEffect(() => {
     // Preload primary screens in background after initial paint so tab switches are instant
@@ -236,6 +249,27 @@ export const RootNavigator: React.FC = () => {
           color={colors.primary}
           style={{ marginTop: 24 }}
         />
+        {loadingSlow && (
+          <View style={{ marginTop: 20, alignItems: 'center', width: '100%', paddingHorizontal: 24 }}>
+            <Text style={[styles.loadingCaption, { color: colors.textSecondary, textAlign: 'center', marginBottom: 12 }]}>
+              Connecting to workspace is taking a moment...
+            </Text>
+            <TouchableOpacity
+              style={[styles.authRetryButton, { backgroundColor: colors.primary, paddingVertical: 10 }]}
+              onPress={retryAuth}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.authRetryButtonText}>Retry Connection</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.authCancelButton, { borderColor: colors.border, marginTop: 8, paddingVertical: 8 }]}
+              onPress={logout}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.authCancelButtonText, { color: colors.textSecondary }]}>Return to Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   }
@@ -350,6 +384,7 @@ export const RootNavigator: React.FC = () => {
           }}
         >
           <RootStack.Screen name="Register" component={RegisterScreen} />
+          <RootStack.Screen name="RegistrationStatus" component={RegistrationStatusScreen} />
           <RootStack.Screen name="Login" component={LoginScreen} />
         </RootStack.Navigator>
       </NavigationContainer>

@@ -65,8 +65,11 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({ onNavigate }) => {
   }, []);
 
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+  const currentMonthStr = `${year}-${month}`;
 
   const activeStaff = users.filter(u => u.isActive !== false && u.role === 'staff');
   const pendingStaffApprovals = users.filter(

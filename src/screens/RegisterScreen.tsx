@@ -78,10 +78,24 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
     clearRegistrationProgress,
     checkEmailVerification,
     restartRegistration,
+    onRegistrationSubmitted,
   } = useAuth();
 
   const [step, setStep] = useState<RegistrationStep>('details');
   const [createdUser, setCreatedUser] = useState<FirebaseUser | null>(null);
+  const [submittingSlow, setSubmittingSlow] = useState(false);
+
+  useEffect(() => {
+    let t: any = null;
+    if (step === 'submitting') {
+      t = setTimeout(() => setSubmittingSlow(true), 4000);
+    } else {
+      setSubmittingSlow(false);
+    }
+    return () => {
+      if (t) clearTimeout(t);
+    };
+  }, [step]);
 
   // Form Fields
   const [name, setName] = useState('');
@@ -335,9 +349,17 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
     setFaceError('');
 
     try {
-      const duplicate = await safeCheckDuplicate(result.embeddingB64);
+      const duplicate = await safeCheckDuplicate(result.embeddingB64, activeUser.uid);
       if (duplicate.isDuplicate && duplicate.personnelId && duplicate.personnelId !== activeUser.uid) {
-        throw new Error('This face is already enrolled under another staff account. Registration blocked.');
+        // Permanent hard-lock: immediately drop all future frames and invalidate capture attempt
+        isCapturingRef.current = true;
+        samplesRef.current = [];
+        setSampleCount(0);
+        setLoading(false);
+        const duplicateMsg = `Biometric Conflict: This face is already enrolled under staff account (${duplicate.personnelName || 'Existing Staff'}). Duplicate face registration is strictly prohibited.`;
+        setFaceError(duplicateMsg);
+        showError('Biometric Conflict Detected', duplicateMsg);
+        return;
       }
 
       // Guard check: ensure we do not exceed required samples
@@ -367,6 +389,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
         consentObtained: true,
         sampleCount: REQUIRED_SAMPLES,
         approvalStatus: 'pending',
+        sampleEmbeddingB64: samplesRef.current[0],
       });
 
       if (!regRes.success || !regRes.template) {
@@ -570,8 +593,21 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
         _syncedAt: nowIso,
       };
 
-      await setDoc(userDocRef, staffPayload, { merge: true });
+      // 15-second timeout protection around Firestore setDoc
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Registration submission timed out after 15 seconds. Please check your network and retry.')), 15000)
+      );
+
+      await Promise.race([
+        setDoc(userDocRef, staffPayload, { merge: true }),
+        timeoutPromise,
+      ]);
+
+      // Immediately synchronize AuthContext state so RootNavigator transitions to RegistrationStatus
+      await onRegistrationSubmitted(staffPayload as any);
       await clearRegistrationProgress();
+      setLoading(false);
+      isSubmittingRef.current = false;
 
       showSuccess(
         'Registration Submitted',
@@ -994,6 +1030,34 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
               <Text style={[styles.submittingDesc, { color: colors.textSecondary }]}>
                 Setting up your staff profile for store administrator approval.
               </Text>
+              {submittingSlow && (
+                <View style={{ marginTop: 24, width: '100%', alignItems: 'center' }}>
+                  <Text style={[styles.submittingDesc, { color: colors.textSecondary, marginBottom: 12 }]}>
+                    Submission taking longer than usual?
+                  </Text>
+                  <TouchableOpacity
+                    style={{ backgroundColor: colors.primary, width: '100%', paddingVertical: 12, alignItems: 'center', borderRadius: RADIUS.md }}
+                    onPress={() => {
+                      if (navigation?.replace) navigation.replace('RegistrationStatus');
+                      else navigation?.navigate('RegistrationStatus');
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Check Approval Status</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ marginTop: 12, padding: 8 }}
+                    onPress={() => {
+                      setStep('face_enrollment');
+                      setLoading(false);
+                      isSubmittingRef.current = false;
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ color: colors.textSecondary, fontSize: 13, textDecorationLine: 'underline' }}>Retry Face Capture</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
         </KeyboardAwareFormContainer>

@@ -675,19 +675,20 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
           </TouchableOpacity>
         )}
 
-        {/* Section 1: Attendance Status Card */}
-        <AppCard>
-          <View style={styles.cardHeaderRow}>
+        {/* --- Modern Executive Hero Attendance Card --- */}
+        <AppCard style={styles.heroAttendanceCard}>
+          {/* Top Status & Date Header */}
+          <View style={styles.heroHeaderRow}>
             <View>
               <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
                 TODAY'S STATUS
               </Text>
-              <Text style={[styles.mainStatusText, { color: colors.text }]}>
+              <Text style={[styles.heroMainStatus, { color: colors.text }]}>
                 {todayRecord && todayRecord.punchInTime
                   ? todayRecord.punchOutTime
-                    ? 'Shift Finished'
-                    : 'Checked In'
-                  : 'Not Checked In Yet'}
+                    ? 'Shift Completed'
+                    : 'Currently Checked In'
+                  : 'Not Punched In Today'}
               </Text>
             </View>
             <StatusBadge
@@ -695,41 +696,130 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
                 todayRecord && todayRecord.punchInTime
                   ? todayRecord.punchOutTime
                     ? 'COMPLETED'
-                    : 'PRESENT'
-                  : 'ABSENT'
+                    : 'ACTIVE SHIFT'
+                  : 'NOT PUNCHED'
               }
               variant={
                 todayRecord && todayRecord.punchInTime
                   ? todayRecord.punchOutTime
                     ? 'info'
                     : 'success'
-                  : 'danger'
+                  : 'warning'
               }
               size="medium"
             />
           </View>
 
+          {/* Primary Action Button (Single Clean Smart Action) */}
+          <View style={styles.heroActionContainer}>
+            {!todayRecord?.punchInTime ? (
+              <TouchableOpacity
+                style={[
+                  styles.primaryPunchBtn,
+                  { backgroundColor: locationState.canPunch ? '#10B981' : isDark ? '#1E293B' : '#E2E8F0' },
+                  isPunching && { opacity: 0.8 },
+                ]}
+                onPress={handlePunchIn}
+                disabled={isPunching}
+                activeOpacity={0.85}
+              >
+                {isPunching ? (
+                  <View style={styles.actionBtnRow}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={styles.primaryPunchBtnText}>Verifying Face Biometrics...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.actionBtnRow}>
+                    <Clock size={20} color={locationState.canPunch ? '#FFFFFF' : '#94A3B8'} />
+                    <Text
+                      style={[
+                        styles.primaryPunchBtnText,
+                        !locationState.canPunch && { color: isDark ? '#94A3B8' : '#64748B' },
+                      ]}
+                    >
+                      PUNCH IN NOW
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ) : !todayRecord?.punchOutTime ? (
+              <TouchableOpacity
+                style={[
+                  styles.primaryPunchBtn,
+                  { backgroundColor: '#DC2626' },
+                  isPunching && { opacity: 0.8 },
+                ]}
+                onPress={handlePunchOut}
+                disabled={isPunching}
+                activeOpacity={0.85}
+              >
+                {isPunching ? (
+                  <View style={styles.actionBtnRow}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={styles.primaryPunchBtnText}>Verifying Punch Out...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.actionBtnRow}>
+                    <Clock size={20} color="#FFFFFF" />
+                    <Text style={styles.primaryPunchBtnText}>PUNCH OUT</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View
+                style={[
+                  styles.completedShiftBanner,
+                  { backgroundColor: isDark ? 'rgba(34,197,94,0.1)' : '#F0FDF4', borderColor: isDark ? 'rgba(34,197,94,0.3)' : '#BBF7D0' },
+                ]}
+              >
+                <CheckCircle2 size={20} color={colors.success} />
+                <Text style={[styles.completedShiftText, { color: colors.success }]}>
+                  Shift completed for today ({todayRecord.totalHours} hrs worked)
+                </Text>
+              </View>
+            )}
+
+            {/* Subtitle / Contextual Guidance */}
+            <View style={styles.actionStatusSubtitleRow}>
+              {isLocating ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={[styles.actionSubtitleText, { color: colors.textSecondary }]}>
+                    Detecting current shop distance...
+                  </Text>
+                </View>
+              ) : locationState.status === 'INSIDE_GEOFENCE' ? (
+                <Text style={[styles.actionSubtitleText, { color: colors.success }]}>
+                  ✓ Inside store area ({Math.round(distanceMeters || 0)}m from shop)
+                </Text>
+              ) : locationState.status === 'OUTSIDE_GEOFENCE' ? (
+                <Text style={[styles.actionSubtitleText, { color: colors.warning }]}>
+                  ⚠ Outside store geofence ({Math.round(distanceMeters || 0)}m / allowed {config.allowedRadiusMeters}m)
+                </Text>
+              ) : (
+                <Text style={[styles.actionSubtitleText, { color: colors.textSecondary }]}>
+                  Store hours: {config.openingTime} - {config.closingTime}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {/* Today's Punch Metrics Row */}
           <View style={[styles.statusInfoGrid, { borderTopColor: colors.border }]}>
             <View style={styles.statusInfoItem}>
-              <Text style={[styles.statusInfoLabel, { color: colors.textSecondary }]}>
-                Punch In
-              </Text>
+              <Text style={[styles.statusInfoLabel, { color: colors.textSecondary }]}>Punch In</Text>
               <Text style={[styles.statusInfoValue, { color: colors.text }]}>
                 {todayRecord?.punchInTime ? formatTime(todayRecord.punchInTime) : '--:--'}
               </Text>
             </View>
             <View style={styles.statusInfoItem}>
-              <Text style={[styles.statusInfoLabel, { color: colors.textSecondary }]}>
-                Punch Out
-              </Text>
+              <Text style={[styles.statusInfoLabel, { color: colors.textSecondary }]}>Punch Out</Text>
               <Text style={[styles.statusInfoValue, { color: colors.text }]}>
                 {todayRecord?.punchOutTime ? formatTime(todayRecord.punchOutTime) : '--:--'}
               </Text>
             </View>
             <View style={styles.statusInfoItem}>
-              <Text style={[styles.statusInfoLabel, { color: colors.textSecondary }]}>
-                Hours Today
-              </Text>
+              <Text style={[styles.statusInfoLabel, { color: colors.textSecondary }]}>Hours Today</Text>
               <Text style={[styles.statusInfoValue, { color: colors.primary }]}>
                 {todayRecord?.totalHours ? `${todayRecord.totalHours} hrs` : '--'}
               </Text>
@@ -737,8 +827,108 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
           </View>
         </AppCard>
 
-        {/* Section 2: Geo-Fence Status Card */}
-        <AppCard>
+        {/* --- Quick Verification Status Bar (Single Compact Strip) --- */}
+        <View
+          style={[
+            styles.verificationStrip,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          {/* GPS Chip */}
+          <TouchableOpacity
+            style={styles.stripItem}
+            onPress={() => fetchLiveLocation(true)}
+            activeOpacity={0.7}
+          >
+            <MapPin
+              size={14}
+              color={
+                locationState.status === 'INSIDE_GEOFENCE'
+                  ? colors.success
+                  : locationState.status === 'OUTSIDE_GEOFENCE'
+                  ? colors.warning
+                  : colors.primary
+              }
+            />
+            <Text
+              style={[
+                styles.stripItemText,
+                {
+                  color:
+                    locationState.status === 'INSIDE_GEOFENCE'
+                      ? colors.success
+                      : locationState.status === 'OUTSIDE_GEOFENCE'
+                      ? colors.warning
+                      : colors.textSecondary,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {isLocating
+                ? 'Locating...'
+                : locationState.status === 'INSIDE_GEOFENCE'
+                ? `GPS: OK (${Math.round(distanceMeters || 0)}m)`
+                : 'GPS: Outside'}
+            </Text>
+            <RotateCw size={11} color={colors.textSecondary} style={{ marginLeft: 2 }} />
+          </TouchableOpacity>
+
+          <View style={[styles.stripDivider, { backgroundColor: colors.border }]} />
+
+          {/* Biometrics Chip */}
+          <View style={styles.stripItem}>
+            <ShieldCheck
+              size={14}
+              color={
+                bioEnrollmentStatus?.canVerify !== false
+                  ? colors.success
+                  : colors.warning
+              }
+            />
+            <Text
+              style={[
+                styles.stripItemText,
+                {
+                  color:
+                    bioEnrollmentStatus?.canVerify !== false
+                      ? colors.success
+                      : colors.warning,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {bioEnrollmentStatus?.canVerify !== false ? 'Face: Ready' : 'Face: Pending'}
+            </Text>
+          </View>
+
+          <View style={[styles.stripDivider, { backgroundColor: colors.border }]} />
+
+          {/* Device Chip */}
+          <TouchableOpacity
+            style={styles.stripItem}
+            onPress={() => setDeviceModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Smartphone
+              size={14}
+              color={deviceStatus?.status === 'APPROVED' ? colors.success : colors.warning}
+            />
+            <Text
+              style={[
+                styles.stripItemText,
+                {
+                  color: deviceStatus?.status === 'APPROVED' ? colors.success : colors.warning,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {deviceStatus?.status === 'APPROVED' ? 'Device: OK' : 'Device: Pending'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Shop Location & Geofence Status Card */}
+        <AppCard style={{ marginBottom: SPACING.md }}>
           <View style={styles.cardHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <MapPin size={18} color={colors.primary} style={{ marginRight: 6 }} />
@@ -764,85 +954,7 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
             </TouchableOpacity>
           </View>
 
-          {/* Geo Status Indicator Banner */}
-          <View
-            style={[
-              styles.geoIndicatorBox,
-              {
-                backgroundColor: isLocating
-                  ? isDark ? 'rgba(37,99,235,0.1)' : '#EFF6FF'
-                  : locationState.status === 'INSIDE_GEOFENCE'
-                  ? isDark ? 'rgba(34,197,94,0.1)' : '#F0FDF4'
-                  : locationState.status === 'OUTSIDE_GEOFENCE' || locationState.status === 'LOW_ACCURACY'
-                  ? isDark ? 'rgba(245,158,11,0.1)' : '#FFFBEB'
-                  : isDark ? 'rgba(239,68,68,0.08)' : '#FEF2F2',
-                borderColor: isLocating
-                  ? colors.primary
-                  : locationState.status === 'INSIDE_GEOFENCE'
-                  ? isDark ? 'rgba(34,197,94,0.3)' : '#BBF7D0'
-                  : locationState.status === 'OUTSIDE_GEOFENCE' || locationState.status === 'LOW_ACCURACY'
-                  ? isDark ? 'rgba(245,158,11,0.3)' : '#FDE68A'
-                  : isDark ? 'rgba(239,68,68,0.3)' : '#FECACA',
-              },
-            ]}
-          >
-            {isLocating ? (
-              <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 10 }} />
-            ) : locationState.status === 'INSIDE_GEOFENCE' ? (
-              <CheckCircle2 size={20} color={colors.success} style={{ marginRight: 10 }} />
-            ) : locationState.status === 'OUTSIDE_GEOFENCE' || locationState.status === 'LOW_ACCURACY' ? (
-              <AlertTriangle size={20} color={colors.warning} style={{ marginRight: 10 }} />
-            ) : (
-              <AlertTriangle size={20} color={colors.danger} style={{ marginRight: 10 }} />
-            )}
-            <View style={{ flex: 1 }}>
-              <Text
-                style={[
-                  styles.geoIndicatorTitle,
-                  {
-                    color: isLocating
-                      ? colors.primary
-                      : locationState.status === 'INSIDE_GEOFENCE'
-                      ? colors.success
-                      : locationState.status === 'OUTSIDE_GEOFENCE' || locationState.status === 'LOW_ACCURACY'
-                      ? colors.warning
-                      : colors.danger,
-                  },
-                ]}
-              >
-                {isLocating
-                  ? 'Checking your location...'
-                  : locationState.status === 'INSIDE_GEOFENCE'
-                  ? "You're inside the shop area"
-                  : locationState.status === 'OUTSIDE_GEOFENCE'
-                  ? "You're outside the shop area"
-                  : locationState.status === 'LOW_ACCURACY'
-                  ? 'GPS signal is weak'
-                  : locationState.status === 'PERMISSION_DENIED'
-                  ? 'Location permission required'
-                  : locationState.status === 'LOCATION_DISABLED'
-                  ? 'Location service turned off'
-                  : 'Location notice'}
-              </Text>
-              <Text style={[styles.geoIndicatorSub, { color: colors.textSecondary }]}>
-                {isLocating
-                  ? 'Checking your location...'
-                  : locationState.status === 'INSIDE_GEOFENCE'
-                  ? `Distance: ${Math.round(distanceMeters || 0)}m from shop`
-                  : locationState.status === 'OUTSIDE_GEOFENCE'
-                  ? `You're ${Math.max(0, Math.round((distanceMeters || 0) - config.allowedRadiusMeters))}m beyond the allowed ${config.allowedRadiusMeters}m radius`
-                  : locationState.status === 'LOW_ACCURACY'
-                  ? 'GPS signal is weak. Please move to an open area and refresh your location.'
-                  : locationState.status === 'PERMISSION_DENIED'
-                  ? 'Location permission is required for attendance. Please enable precise location.'
-                  : locationState.status === 'LOCATION_DISABLED'
-                  ? 'Device location service is disabled. Please turn on GPS.'
-                  : locationState.message}
-              </Text>
-            </View>
-          </View>
-
-          {/* Collapsible Diagnostics Section (Technical Details for Admin / Debugging) */}
+          {/* Collapsible Technical Details for Diagnostics / Acceptance Verification */}
           <TouchableOpacity
             style={[styles.diagToggleRow, { borderTopColor: colors.border }]}
             onPress={() => setShowDiagnostics(!showDiagnostics)}
@@ -864,67 +976,11 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
           {showDiagnostics && (
             <View style={[styles.diagCardBody, { backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC' }]}>
               <View style={styles.diagRow}>
-                <Text style={[styles.diagLabel, { color: colors.textSecondary }]}>Current GPS</Text>
+                <Text style={[styles.diagLabel, { color: colors.textSecondary }]}>Current Distance</Text>
                 <Text style={[styles.diagValMono, { color: colors.text }]}>
-                  {currentCoords
-                    ? `${currentCoords.latitude.toFixed(6)}, ${currentCoords.longitude.toFixed(6)}`
-                    : isLocating
-                    ? 'Detecting...'
-                    : 'Unavailable'}
+                  {distanceMeters !== null ? `${Math.round(distanceMeters)}m from store` : '--'}
                 </Text>
               </View>
-
-              <View style={styles.diagRow}>
-                <Text style={[styles.diagLabel, { color: colors.textSecondary }]}>Shop GPS Target</Text>
-                <Text style={[styles.diagValMono, { color: colors.text }]}>
-                  {`${shopCoords.latitude.toFixed(6)}, ${shopCoords.longitude.toFixed(6)}`}
-                </Text>
-              </View>
-
-              <View style={styles.diagRow}>
-                <Text style={[styles.diagLabel, { color: colors.textSecondary }]}>Distance to Shop</Text>
-                <Text
-                  style={[
-                    styles.diagValMono,
-                    {
-                      color:
-                        distanceMeters !== null && distanceMeters <= config.allowedRadiusMeters
-                          ? colors.success
-                          : colors.warning,
-                      fontWeight: '700',
-                    },
-                  ]}
-                >
-                  {distanceMeters !== null
-                    ? `${Math.round(distanceMeters)}m (Allowed: ${config.allowedRadiusMeters}m)`
-                    : '--'}
-                </Text>
-              </View>
-
-              <View style={styles.diagRow}>
-                <Text style={[styles.diagLabel, { color: colors.textSecondary }]}>GPS Accuracy</Text>
-                <Text style={[styles.diagValMono, { color: colors.text }]}>
-                  {currentCoords?.accuracy !== undefined && currentCoords.accuracy !== null
-                    ? `±${Math.round(currentCoords.accuracy)}m ${
-                        currentCoords.accuracy <= 60 ? '(Good)' : '(Weak signal)'
-                      }`
-                    : '--'}
-                </Text>
-              </View>
-
-              <View style={styles.diagRow}>
-                <Text style={[styles.diagLabel, { color: colors.textSecondary }]}>Last GPS Update</Text>
-                <Text style={[styles.diagValMono, { color: colors.textSecondary }]}>
-                  {lastLocationUpdateTime
-                    ? new Date(lastLocationUpdateTime).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                      })
-                    : '--:--'}
-                </Text>
-              </View>
-
               <View style={styles.diagRow}>
                 <Text style={[styles.diagLabel, { color: colors.textSecondary }]}>Geofence Status</Text>
                 <Text
@@ -941,48 +997,7 @@ export const AttendanceScreen: React.FC<{ navigation?: any }> = ({ navigation })
               </View>
             </View>
           )}
-
-          <View style={styles.shopHoursRow}>
-            <Text style={[styles.shopHoursText, { color: colors.textSecondary }]}>
-              Store Hours: {config.openingTime} - {config.closingTime}
-            </Text>
-            <StatusBadge
-              label={businessHours.isWithinHours ? 'STORE OPEN' : 'CLOSED'}
-              variant={businessHours.isWithinHours ? 'success' : 'neutral'}
-              size="small"
-            />
-          </View>
         </AppCard>
-
-        {/* Section 3: Punch Actions (Large Buttons min 48px, 50/50 flex) */}
-        <View style={styles.punchActionsContainer}>
-          <PrimaryButton
-            title={isPunching ? 'Verifying...' : 'Punch In'}
-            icon={<Clock size={18} color="#FFFFFF" />}
-            onPress={handlePunchIn}
-            disabled={
-              isPunching ||
-              (!!todayRecord?.punchInTime && !todayRecord?.punchOutTime)
-            }
-            loading={isPunching}
-            size="large"
-            style={styles.largePunchButton}
-          />
-          <Button
-            title={isPunching ? 'Verifying...' : 'Punch Out'}
-            icon={<Clock size={18} color={colors.primary} />}
-            onPress={handlePunchOut}
-            variant="outline"
-            disabled={
-              isPunching ||
-              !todayRecord?.punchInTime ||
-              !!todayRecord?.punchOutTime
-            }
-            loading={isPunching}
-            size="large"
-            style={styles.largePunchButton}
-          />
-        </View>
 
         {/* Section 4: Working Hours Summary */}
         <View style={styles.statsRow}>
@@ -1204,6 +1219,101 @@ const styles = StyleSheet.create({
   content: {
     padding: SPACING.lg,
     paddingBottom: SPACING.huge,
+  },
+  heroAttendanceCard: {
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  heroHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.md,
+  },
+  heroDateText: {
+    ...TYPOGRAPHY.captionSmall,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  heroMainStatus: {
+    ...TYPOGRAPHY.h3,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  heroActionContainer: {
+    marginVertical: SPACING.xs,
+  },
+  primaryPunchBtn: {
+    minHeight: 52,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    ...SHADOWS.subtle,
+  },
+  primaryPunchBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 16,
+    letterSpacing: 0.5,
+  },
+  actionBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  actionStatusSubtitleRow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  actionSubtitleText: {
+    ...TYPOGRAPHY.captionSmall,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  completedShiftBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+  },
+  completedShiftText: {
+    ...TYPOGRAPHY.bodyBold,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  verificationStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.md,
+  },
+  stripItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  stripItemText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stripDivider: {
+    width: 1,
+    height: 18,
   },
   headerActionRow: {
     flexDirection: 'row',

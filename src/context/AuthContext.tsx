@@ -34,6 +34,7 @@ interface AuthContextType {
   clearRegistrationProgress: () => Promise<void>;
   checkEmailVerification: () => Promise<{ verified: boolean; user?: FirebaseUser }>;
   restartRegistration: () => Promise<void>;
+  onRegistrationSubmitted: (staffProfile: User) => Promise<void>;
   isAdmin: boolean;
   /** @deprecated Applications now support exactly two roles: 'admin' and 'staff'. isManager is permanently false. */
   isManager: boolean;
@@ -89,20 +90,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Attempt to read staff profile from Firestore
+    // Attempt to read staff profile from Firestore with timeout & local cache safeguard
     const userDocRef = doc(FirebaseService.getFirestore(), 'users', authUser.uid);
-    let docSnap;
+    let docSnap: any = null;
     try {
-      docSnap = await getDoc(userDocRef);
+      const getDocPromise = getDoc(userDocRef);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+      docSnap = await Promise.race([getDocPromise, timeoutPromise]);
     } catch (readErr: any) {
       console.warn('[AuthContext] Error reading user profile:', readErr);
-      setAuthStatus('error');
-      setAuthError(readErr?.message || 'Could not verify account profile.');
-      return;
+    }
+
+    // Fallback: If network timed out or failed, inspect local persistent cache
+    if (!docSnap || !docSnap.exists || !docSnap.exists()) {
+      const cached = await StorageService.getCurrentUser().catch(() => null);
+      if (cached && cached.id === authUser.uid) {
+        setCurrentUser(cached);
+        setAllUsers([cached]);
+        if (cached.registrationStatus === 'pending') {
+          setAuthStatus('approval_pending');
+          attachProfileListener(authUser.uid);
+          return;
+        } else if (cached.registrationStatus === 'approved' && cached.isActive) {
+          setAuthStatus('approved_staff');
+          attachProfileListener(authUser.uid);
+          return;
+        } else if (cached.registrationStatus === 'rejected') {
+          setAuthStatus('rejected');
+          attachProfileListener(authUser.uid);
+          return;
+        }
+      }
     }
 
     // 1. Profile exists in Firestore
-    if (docSnap && docSnap.exists()) {
+    if (docSnap && docSnap.exists && docSnap.exists()) {
       const rawData = docSnap.data();
 
       // Check for Admin / Manager accessing mobile application
@@ -550,6 +572,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthError(null);
   };
 
+  const onRegistrationSubmitted = async (staffProfile: User): Promise<void> => {
+    cleanupProfileListener();
+    setCurrentUser(staffProfile);
+    setAllUsers([staffProfile]);
+    await StorageService.setCurrentUser(staffProfile);
+    await StorageService.clearStaffRegistrationDraft();
+    setRegistrationDraft(null);
+    setAuthStatus('approval_pending');
+    setAuthError(null);
+    setIsLoading(false);
+    attachProfileListener(staffProfile.id);
+  };
+
   const value: AuthContextType = useMemo(
     () => ({
       currentUser,
@@ -570,6 +605,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearRegistrationProgress,
       checkEmailVerification,
       restartRegistration,
+      onRegistrationSubmitted,
       isAdmin: currentUser?.role === 'admin',
       isManager: false,
       isStaff: currentUser?.role === 'staff',
@@ -592,6 +628,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearRegistrationProgress,
       checkEmailVerification,
       restartRegistration,
+      onRegistrationSubmitted,
     ]
   );
 

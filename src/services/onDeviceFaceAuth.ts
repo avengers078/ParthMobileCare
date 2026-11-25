@@ -64,18 +64,83 @@ export function isFaceAuthReady(): boolean {
   }
 }
 
+function decodeEmbeddingB64(b64: string): number[] {
+  try {
+    const bin = typeof globalThis.atob === 'function'
+      ? globalThis.atob(b64)
+      : typeof Buffer !== 'undefined'
+      ? Buffer.from(b64, 'base64').toString('binary')
+      : '';
+    if (!bin) return [];
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const floatArr = new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
+    return Array.from(floatArr);
+  } catch {
+    return [];
+  }
+}
+
+function calculateCosineSimilarity(vecA: number[], vecB: number[]): number {
+  if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) return 0;
+  const len = Math.min(vecA.length, vecB.length);
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < len; i++) {
+    dot += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom > 0 ? dot / denom : 0;
+}
+
 /** Check duplicate safely without throwing if native store is not available */
 export async function safeCheckDuplicate(
-  embeddingB64: string
-): Promise<{ isDuplicate: boolean; personnelId?: string; score: number }> {
+  embeddingB64: string,
+  currentUserId?: string
+): Promise<{ isDuplicate: boolean; personnelId?: string; score: number; personnelName?: string }> {
+  // 1. Native FaceAuth hardware/SecureKV duplicate scan
   try {
     await initializeOnDeviceFaceAuth();
     if (isFaceAuthReady()) {
-      return await FaceAuth.checkDuplicate(embeddingB64);
+      const nativeResult = await FaceAuth.checkDuplicate(embeddingB64);
+      if (nativeResult.isDuplicate && nativeResult.personnelId && (!currentUserId || nativeResult.personnelId !== currentUserId)) {
+        return nativeResult;
+      }
     }
   } catch (error) {
     console.warn('[FaceAuth] checkDuplicate fallback:', error);
   }
+
+  // 2. Cross-account face template scan against stored biometric descriptors
+  try {
+    const { StorageService } = await import('./storageService');
+    const templates = await StorageService.getFaceTemplates();
+    const candidateVector = decodeEmbeddingB64(embeddingB64);
+
+    if (candidateVector.length > 0 && Array.isArray(templates)) {
+      for (const tmpl of templates) {
+        if (tmpl.userId && (!currentUserId || tmpl.userId !== currentUserId) && tmpl.status === 'active') {
+          if (Array.isArray(tmpl.faceDescriptor) && tmpl.faceDescriptor.length > 0) {
+            const similarity = calculateCosineSimilarity(candidateVector, tmpl.faceDescriptor);
+            if (similarity >= 0.62) {
+              return {
+                isDuplicate: true,
+                personnelId: tmpl.userId,
+                score: similarity,
+                personnelName: tmpl.userName,
+              };
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[FaceAuth] StorageService duplicate check fallback:', e);
+  }
+
   return { isDuplicate: false, score: 0 };
 }
 

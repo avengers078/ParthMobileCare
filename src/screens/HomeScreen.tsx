@@ -40,7 +40,7 @@ import { formatCurrency, formatDate, getTodayDateString } from "../utils/format"
 import { StorageService } from "../services/storageService";
 import { LeadService } from "../services/leadService";
 import { NotificationService } from "../services/notificationService";
-import { CustomerLead } from "../types";
+import { CustomerLead, AttendanceRecord } from "../types";
 
 interface HomeScreenProps {
   navigation: any;
@@ -83,13 +83,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       const todayStr = getTodayDateString();
       const currentMonthPrefix = todayStr.substring(0, 7);
 
-      const [leads, sales, due, purchases, attRecords] = await Promise.all([
+      const dataPromise = Promise.all([
         StorageService.getLeads(),
         StorageService.getSales(),
         LeadService.getDueFollowUps(),
         StorageService.getPurchases(),
         currentUser?.id ? StorageService.getAttendanceRecords(currentUser.id) : Promise.resolve([]),
       ]);
+      const timeoutFallback = new Promise<any[]>((resolve) =>
+        setTimeout(() => resolve([[], [], [], [], []]), 5000)
+      );
+      const [leads, sales, due, purchases, attRecords] = (await Promise.race([
+        dataPromise,
+        timeoutFallback,
+      ])) as [CustomerLead[], any[], CustomerLead[], any[], AttendanceRecord[]];
 
       setTotalLeadsCount(leads.length);
       const todayLeads = leads.filter(l => l.createdAt && l.createdAt.startsWith(todayStr));
