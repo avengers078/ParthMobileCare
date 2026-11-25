@@ -11,9 +11,21 @@ const faceNetAsset = require('../assets/faceModels/facenet_512.tflite');
 const spoof27Asset = require('../assets/faceModels/spoof_2_7.tflite');
 const spoof40Asset = require('../assets/faceModels/spoof_4_0.tflite');
 
+/**
+ * Generates a UNIQUE random mock embedding for dev mode.
+ * Each call produces a different random 512-d vector so that duplicate face
+ * detection works correctly even when using the dev override bypass button.
+ * In production, real camera embeddings from FaceNet are used instead.
+ */
 function createMockEmbeddingB64(): string {
   const floats = new Float32Array(512);
-  for (let i = 0; i < 512; i++) floats[i] = Math.sin(i + 1) * 0.1;
+  // Use Math.random() to produce a unique embedding per capture session
+  for (let i = 0; i < 512; i++) floats[i] = (Math.random() - 0.5) * 2.0;
+  // L2-normalize the vector for realistic cosine similarity behavior
+  let norm = 0;
+  for (let i = 0; i < 512; i++) norm += floats[i] * floats[i];
+  norm = Math.sqrt(norm);
+  if (norm > 0) { for (let i = 0; i < 512; i++) floats[i] /= norm; }
   const bytes = new Uint8Array(floats.buffer);
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);

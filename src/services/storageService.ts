@@ -442,9 +442,22 @@ export class StorageService {
     }
   }
 
-  /** Clears sensitive user session data and cached team records on logout or deactivation. */
+  /** Clears sensitive user session data and cached team records on logout or deactivation.
+   *  IMPORTANT: Face templates are intentionally preserved across logout/login cycles
+   *  to ensure cross-account duplicate face detection works correctly. */
   static async clearSensitiveUserData(): Promise<void> {
+    // Preserve face templates in memory before clearing cache
+    const preservedFaceTemplates = StorageService.memoryCache.has(STORAGE_KEYS.FACE_TEMPLATES)
+      ? StorageService.memoryCache.get(STORAGE_KEYS.FACE_TEMPLATES)
+      : null;
+
     StorageService.memoryCache.clear();
+
+    // Restore face templates to memory cache so duplicate detection works after logout
+    if (preservedFaceTemplates !== null) {
+      StorageService.memoryCache.set(STORAGE_KEYS.FACE_TEMPLATES, preservedFaceTemplates);
+    }
+
     await Promise.all([
       AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER),
       AsyncStorage.removeItem(STORAGE_KEYS.USERS_LIST),
@@ -452,6 +465,7 @@ export class StorageService {
       AsyncStorage.removeItem(STORAGE_KEYS.SALES_TARGETS),
       AsyncStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS),
     ]);
+    // Note: FACE_TEMPLATES key is intentionally NOT removed from AsyncStorage
   }
 
   static async getAllUsers(): Promise<User[]> {

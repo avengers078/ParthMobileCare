@@ -3,6 +3,7 @@ import {
   removePersonnel as nativeRemovePersonnel,
   loadAll as nativeLoadAll,
 } from 'react-native-offline-face-auth/src/secure/templateStore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 
 let initialization: Promise<boolean> | null = null;
 let isInitialized = false;
@@ -114,11 +115,11 @@ export async function safeCheckDuplicate(
     console.warn('[FaceAuth] checkDuplicate fallback:', error);
   }
 
-  // 2. Cross-account face template scan against stored biometric descriptors
+  // 2. Cross-account face template scan against LOCAL stored biometric descriptors
+  const candidateVector = decodeEmbeddingB64(embeddingB64);
   try {
     const { StorageService } = await import('./storageService');
     const templates = await StorageService.getFaceTemplates();
-    const candidateVector = decodeEmbeddingB64(embeddingB64);
 
     if (candidateVector.length > 0 && Array.isArray(templates)) {
       for (const tmpl of templates) {
@@ -139,6 +140,43 @@ export async function safeCheckDuplicate(
     }
   } catch (e) {
     console.warn('[FaceAuth] StorageService duplicate check fallback:', e);
+  }
+
+  // 3. Cross-device Firestore-based face descriptor scan
+  // This catches duplicates even when the first registration happened on a different device
+  // or when local templates were cleared (app reinstall, data wipe, etc.)
+  if (candidateVector.length > 0) {
+    try {
+      const FirebaseService = (await import('./firebase')).default;
+      const db = FirebaseService.getFirestore();
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('hasFaceRegistered', '==', true));
+      const snapshot = await getDocs(q);
+
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data();
+        const docUserId = data.id || docSnap.id;
+
+        // Skip the current user's own record
+        if (currentUserId && docUserId === currentUserId) continue;
+
+        // Check if this user has a stored face descriptor in Firestore
+        if (Array.isArray(data.faceDescriptor) && data.faceDescriptor.length > 0) {
+          const similarity = calculateCosineSimilarity(candidateVector, data.faceDescriptor);
+          if (similarity >= 0.62) {
+            return {
+              isDuplicate: true,
+              personnelId: docUserId,
+              score: similarity,
+              personnelName: data.name || 'Existing Staff',
+            };
+          }
+        }
+      }
+    } catch (firestoreErr) {
+      console.warn('[FaceAuth] Firestore cross-device duplicate check error (non-fatal):', firestoreErr);
+      // Non-fatal: if Firestore is unreachable, local checks (Layer 1 & 2) still apply
+    }
   }
 
   return { isDuplicate: false, score: 0 };

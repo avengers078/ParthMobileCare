@@ -131,6 +131,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
   const samplesRef = useRef<string[]>([]);
   const isCapturingRef = useRef(false);
   const isSubmittingRef = useRef(false);
+  // Store the first sample's descriptor for Firestore cross-device duplicate detection
+  const faceDescriptorRef = useRef<number[]>([]);
 
   // 1. Resume saved registration state from storage & auth state
   useEffect(() => {
@@ -371,6 +373,25 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
       const currentCount = Math.min(samplesRef.current.length, REQUIRED_SAMPLES);
       setSampleCount(currentCount);
 
+      // Store the first sample's decoded descriptor for Firestore cross-device check
+      if (samplesRef.current.length === 1) {
+        try {
+          const bin = typeof globalThis.atob === 'function'
+            ? globalThis.atob(result.embeddingB64)
+            : typeof Buffer !== 'undefined'
+            ? Buffer.from(result.embeddingB64, 'base64').toString('binary')
+            : '';
+          if (bin) {
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const floatArr = new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
+            faceDescriptorRef.current = Array.from(floatArr);
+          }
+        } catch {
+          // Non-fatal: descriptor will remain empty
+        }
+      }
+
       if (currentCount < REQUIRED_SAMPLES) {
         // Cooldown period: give user time to acknowledge sample capture and stabilize
         await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -582,6 +603,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
         faceModelVersion: 'facenet_512',
         hasFaceRegistered: false,
         faceRegistrationDate: nowIso,
+        // Store face descriptor in Firestore for cross-device duplicate detection
+        faceDescriptor: faceDescriptorRef.current.length > 0 ? faceDescriptorRef.current : [],
         deviceId,
         deviceModel,
         devicePlatform,
@@ -940,6 +963,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
                     onPress={() => {
                       Keyboard.dismiss();
                       samplesRef.current = [];
+                      faceDescriptorRef.current = [];
                       isCapturingRef.current = false;
                       setSampleCount(0);
                       setFaceError('');
@@ -989,6 +1013,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ navigation }) =>
                         onResult={handleFaceCaptureResult}
                         onClose={() => {
                           samplesRef.current = [];
+                          faceDescriptorRef.current = [];
                           isCapturingRef.current = false;
                           setSampleCount(0);
                           setFaceError('');
