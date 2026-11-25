@@ -252,7 +252,7 @@ service cloud.firestore {
         'joinedDate', 'basicSalary', 'monthlyTarget', 'isActive',
         'registrationStatus', 'emailVerified',
         'hasFaceRegistered', 'faceRegistrationDate', 'faceEnrollmentStatus', 'faceModelVersion',
-        'faceApprovedAt', 'faceApprovedBy', 'faceRejectionReason',
+        'faceApprovedAt', 'faceApprovedBy', 'faceRejectionReason', 'faceDescriptor',
         'failedVerificationAttempts', 'lastFailedVerificationReason', 'lastFailedVerificationAt',
         'createdBy', 'createdAt', 'passwordSetupStatus', 'invitationToken',
         'deviceId', 'devicePublicKey', 'deviceModel', 'devicePlatform',
@@ -288,7 +288,8 @@ service cloud.firestore {
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 50)) &&
              (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 100)) &&
              (!('_syncedAt' in data) || (data._syncedAt is string && data._syncedAt.size() >= 1 && data._syncedAt.size() <= 50)) &&
-             (!('failedVerificationAttempts' in data) || (data.failedVerificationAttempts is number && data.failedVerificationAttempts >= 0));
+             (!('failedVerificationAttempts' in data) || (data.failedVerificationAttempts is number && data.failedVerificationAttempts >= 0)) &&
+             (!('faceDescriptor' in data) || data.faceDescriptor is list);
     }
 
     function isValidAttendance(data) {
@@ -756,7 +757,7 @@ match /users/{userId} {
           'id', 'name', 'email', 'phone', 'role', 'designation', 'avatarUrl',
           'joinedDate', 'basicSalary', 'monthlyTarget', 'isActive',
           'registrationStatus', 'emailVerified', 'faceEnrollmentStatus',
-          'faceModelVersion', 'faceRegistrationDate', 'hasFaceRegistered',
+          'faceModelVersion', 'faceRegistrationDate', 'hasFaceRegistered', 'faceDescriptor',
           'deviceId', 'deviceModel', 'devicePlatform', 'deviceRegisteredAt',
           'deviceBindingStatus', 'devicePublicKey', 'createdAt', 'createdBy', '_syncedAt'
         ])
@@ -807,7 +808,7 @@ match /users/{userId} {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'phone', 'designation', 'avatarUrl', 'joinedDate',
           'registrationStatus', 'emailVerified', 'faceEnrollmentStatus',
-          'faceModelVersion', 'faceRegistrationDate', 'hasFaceRegistered',
+          'faceModelVersion', 'faceRegistrationDate', 'hasFaceRegistered', 'faceDescriptor',
           'deviceId', 'deviceModel', 'devicePlatform', 'deviceRegisteredAt',
           'deviceBindingStatus', 'devicePublicKey', '_syncedAt'
         ])
