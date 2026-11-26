@@ -683,7 +683,31 @@ export class StorageService {
 
       // 2. Synchronize with Cloud Firestore
       try {
-        await FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.LEADS, leadToSave.id, leadToSave);
+        // Keep the cloud document aligned with the explicit Firestore lead schema.
+        // Local-only flags and future UI fields must not make a valid lead fail rules.
+        const cloudLead = {
+          id: leadToSave.id,
+          name: leadToSave.name,
+          phone: leadToSave.phone,
+          alternatePhone: leadToSave.alternatePhone,
+          interestedBrand: leadToSave.interestedBrand,
+          interestedModel: leadToSave.interestedModel,
+          budget: leadToSave.budget,
+          remarks: leadToSave.remarks,
+          status: leadToSave.status,
+          followUpDate: leadToSave.followUpDate,
+          followUpTime: leadToSave.followUpTime,
+          createdBy: leadToSave.createdBy,
+          createdByName: leadToSave.createdByName,
+          assignedTo: leadToSave.assignedTo,
+          assignedToName: leadToSave.assignedToName,
+          createdAt: leadToSave.createdAt,
+          updatedAt: leadToSave.updatedAt,
+          history: leadToSave.history,
+          inquiryPhotos: leadToSave.inquiryPhotos,
+          repairPhotos: leadToSave.repairPhotos,
+        };
+        await FirestoreSyncService.syncDocument(FIRESTORE_COLLECTIONS.LEADS, leadToSave.id, cloudLead);
         leadToSave._syncPending = false;
         leadToSave._syncedAt = new Date().toISOString();
 
@@ -849,36 +873,53 @@ export class StorageService {
           ? JSON.stringify(inspectionPhotos)
           : (purchase.customerPhotoUri || '');
 
+        const requiredKycString = (value: string | undefined, field: string, minLength: number, maxLength: number): string => {
+          const normalized = (value || '').trim();
+          if (normalized.length < minLength || normalized.length > maxLength) {
+            throw new Error(`Cannot sync seller KYC: ${field} must be between ${minLength} and ${maxLength} characters.`);
+          }
+          return normalized;
+        };
+        const optionalKycString = (value: string | undefined, maxLength: number): string =>
+          value && value.length <= maxLength ? value : '';
+
         const kycDoc = {
           id: 'record',
           purchaseId: purchase.id,
-          customerName: purchase.customerName || '',
-          phone: purchase.phone || '',
-          alternatePhone: purchase.alternatePhone || '',
-          address: purchase.address || '',
-          aadhaarNumber: purchase.rawAadhaarNumber || purchase.aadhaarNumber || '',
-          aadhaarFrontUri: purchase.aadhaarFrontUri || '',
-          aadhaarBackUri: purchase.aadhaarBackUri || '',
-          aadhaarPhotoFront: purchase.aadhaarPhotoFront || purchase.aadhaarFrontUri || '',
-          aadhaarPhotoBack: purchase.aadhaarPhotoBack || purchase.aadhaarBackUri || '',
-          aadhaarCardPhotoUri: purchase.aadhaarCardPhotoUri || purchase.aadhaarFrontUri || '',
-          aadhaarFrontPublicId: purchase.aadhaarFrontPublicId || '',
-          aadhaarBackPublicId: purchase.aadhaarBackPublicId || '',
-          customerPhotoUri: customerPhotoValue,
-          digitalSignatureUri: purchase.digitalSignatureUri || '',
-          billImageUri: purchase.billImageUri || '',
-          recordedByStaffId: purchase.purchasedByStaffId,
-          recordedByStaffName: purchase.purchasedByStaffName,
+          customerName: requiredKycString(purchase.customerName, 'customer name', 1, 100),
+          phone: requiredKycString(purchase.phone, 'phone number', 7, 20),
+          alternatePhone: optionalKycString(purchase.alternatePhone, 20),
+          address: requiredKycString(purchase.address, 'address', 1, 250),
+          aadhaarNumber: requiredKycString(purchase.rawAadhaarNumber || purchase.aadhaarNumber, 'Aadhaar number', 4, 20),
+          aadhaarFrontUri: optionalKycString(purchase.aadhaarFrontUri, 500000),
+          aadhaarBackUri: optionalKycString(purchase.aadhaarBackUri, 500000),
+          aadhaarPhotoFront: optionalKycString(purchase.aadhaarPhotoFront || purchase.aadhaarFrontUri, 500000),
+          aadhaarPhotoBack: optionalKycString(purchase.aadhaarPhotoBack || purchase.aadhaarBackUri, 500000),
+          aadhaarCardPhotoUri: optionalKycString(purchase.aadhaarCardPhotoUri || purchase.aadhaarFrontUri, 500000),
+          aadhaarFrontPublicId: optionalKycString(purchase.aadhaarFrontPublicId, 500),
+          aadhaarBackPublicId: optionalKycString(purchase.aadhaarBackPublicId, 500),
+          customerPhotoUri: optionalKycString(customerPhotoValue, 500000),
+          digitalSignatureUri: optionalKycString(purchase.digitalSignatureUri, 500000),
+          billImageUri: optionalKycString(purchase.billImageUri, 500000),
+          recordedByStaffId: requiredKycString(purchase.purchasedByStaffId, 'staff ID', 1, 100),
+          recordedByStaffName: requiredKycString(purchase.purchasedByStaffName, 'staff name', 1, 100),
           createdAt: new Date().toISOString(),
           _syncedAt: new Date().toISOString(),
         };
-        FirestoreSyncService.syncDocument(
-          `${FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES}/${purchase.id}/kyc_sensitive`,
-          'record',
-          kycDoc
-        ).catch(err => {
-          console.warn('[StorageService] Error syncing purchase kyc_sensitive:', err);
-        });
+        try {
+          await FirestoreSyncService.syncDocument(
+            `${FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES}/${purchase.id}/kyc_sensitive`,
+            'record',
+            kycDoc
+          );
+        } catch (err: any) {
+          console.error('[StorageService] CRITICAL: Failed to sync purchase kyc_sensitive subcollection:', err?.code || err?.message || err);
+          console.error('[StorageService] KYC payload keys:', Object.keys(kycDoc));
+          console.error('[StorageService] purchaseId:', purchase.id, 'recordedByStaffId:', kycDoc.recordedByStaffId);
+          throw new Error(`Cloud sync error: seller Aadhaar KYC could not be saved (${err?.code || err?.message || 'unknown error'}). The purchase is saved on this device; retry the cloud sync before relying on the admin record.`);
+        }
+      } else if (!parentSynced && (purchase.customerName || purchase.aadhaarNumber)) {
+        throw new Error('Cloud sync error: inventory record did not reach Firestore, so seller Aadhaar KYC was not saved.');
       }
     });
   }
@@ -949,31 +990,47 @@ export class StorageService {
 
     // Sensitive buyer KYC subcollection (Admin-only read)
     if (parentSynced && (sale.aadhaarNumber || sale.buyerPhotoUri || sale.aadhaarPhotoUri)) {
+      const requiredKycString = (value: string | undefined, field: string, minLength: number, maxLength: number): string => {
+        const normalized = (value || '').trim();
+        if (normalized.length < minLength || normalized.length > maxLength) {
+          throw new Error(`Cannot sync buyer KYC: ${field} must be between ${minLength} and ${maxLength} characters.`);
+        }
+        return normalized;
+      };
+      const optionalKycString = (value: string | undefined, maxLength: number): string =>
+        value && value.length <= maxLength ? value : '';
       const kycDoc = {
         id: 'record',
         saleId: sale.id,
-        buyerName: sale.buyerName,
-        phone: sale.phone,
-        alternatePhone: sale.alternatePhone || '',
-        address: sale.address,
-        aadhaarNumber: sale.rawAadhaarNumber || sale.aadhaarNumber || '',
-        aadhaarPhotoUri: sale.aadhaarPhotoUri || '',
-        aadhaarPhotoPublicId: sale.aadhaarPhotoPublicId || '',
-        buyerPhotoUri: sale.buyerPhotoUri || '',
-        digitalSignatureUri: sale.digitalSignatureUri || '',
-        recordedByStaffId: sale.soldByStaffId,
-        recordedByStaffName: sale.soldByStaffName,
+        buyerName: requiredKycString(sale.buyerName, 'buyer name', 1, 100),
+        phone: requiredKycString(sale.phone, 'phone number', 7, 20),
+        alternatePhone: optionalKycString(sale.alternatePhone, 20),
+        address: requiredKycString(sale.address, 'address', 1, 250),
+        aadhaarNumber: requiredKycString(sale.rawAadhaarNumber || sale.aadhaarNumber, 'Aadhaar number', 4, 20),
+        aadhaarPhotoUri: optionalKycString(sale.aadhaarPhotoUri, 500000),
+        aadhaarPhotoPublicId: optionalKycString(sale.aadhaarPhotoPublicId, 500),
+        buyerPhotoUri: optionalKycString(sale.buyerPhotoUri, 500000),
+        digitalSignatureUri: optionalKycString(sale.digitalSignatureUri, 500000),
+        recordedByStaffId: requiredKycString(sale.soldByStaffId, 'staff ID', 1, 100),
+        recordedByStaffName: requiredKycString(sale.soldByStaffName, 'staff name', 1, 100),
         recordedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         _syncedAt: new Date().toISOString(),
       };
-      FirestoreSyncService.syncDocument(
-        `${FIRESTORE_COLLECTIONS.SECOND_HAND_SALES}/${sale.id}/kyc_sensitive`,
-        'record',
-        kycDoc
-      ).catch(err => {
-        console.warn('[StorageService] Error syncing sale kyc_sensitive:', err);
-      });
+      try {
+        await FirestoreSyncService.syncDocument(
+          `${FIRESTORE_COLLECTIONS.SECOND_HAND_SALES}/${sale.id}/kyc_sensitive`,
+          'record',
+          kycDoc
+        );
+      } catch (err: any) {
+        console.error('[StorageService] CRITICAL: Failed to sync sale kyc_sensitive subcollection:', err?.code || err?.message || err);
+        console.error('[StorageService] KYC payload keys:', Object.keys(kycDoc));
+        console.error('[StorageService] saleId:', sale.id, 'recordedByStaffId:', kycDoc.recordedByStaffId);
+        throw new Error(`Cloud sync error: buyer Aadhaar KYC could not be saved (${err?.code || err?.message || 'unknown error'}). The sale is already saved on this device; do not submit it again. Ask an admin to sync the buyer KYC.`);
+      }
+    } else if (!parentSynced && (sale.aadhaarNumber || sale.buyerPhotoUri || sale.aadhaarPhotoUri)) {
+      throw new Error('Cloud sync error: sale record did not reach Firestore, so buyer Aadhaar KYC was not saved.');
     }
 
     // Update purchase record status to 'sold' if linked

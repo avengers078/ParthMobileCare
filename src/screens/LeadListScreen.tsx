@@ -900,6 +900,27 @@ export const LeadListScreen: React.FC = () => {
                   ? "Uploads repair photo to secure Cloud CDN"
                   : "Cloud photo upload is paused until storage is connected"
               }
+              maxSelection={3 - inquiryPhotos.length}
+              onCaptureMany={async (uris) => {
+                if (!CloudinaryService.isConfigured()) return;
+                setIsUploadingInquiryPhoto(true);
+                try {
+                  const uploaded: string[] = [];
+                  for (const uri of uris.slice(0, 3 - inquiryPhotos.length)) {
+                    const result = await CloudinaryService.uploadImage(uri, {
+                      folder: 'leads',
+                      tags: ['repair_inquiry', selectedBrand],
+                    });
+                    if (result.success && result.secureUrl) uploaded.push(result.secureUrl);
+                    else showError('Upload Failed', result.error || 'Could not upload one of the selected photos.');
+                  }
+                  setInquiryPhotos(prev => [...prev, ...uploaded].slice(0, 3));
+                } catch (err: any) {
+                  showError('Upload Error', err?.message || 'Network error.');
+                } finally {
+                  setIsUploadingInquiryPhoto(false);
+                }
+              }}
               onCapture={async (uri) => {
                 if (!uri) return;
                 if (!CloudinaryService.isConfigured()) {
@@ -1349,6 +1370,27 @@ export const LeadListScreen: React.FC = () => {
                   ? "Uploads repair photo to secure Cloud CDN"
                   : "Cloud photo upload is paused until storage is connected"
               }
+              maxSelection={3 - editInquiryPhotos.length}
+              onCaptureMany={async (uris) => {
+                if (!CloudinaryService.isConfigured()) return;
+                setIsUploadingEditInquiryPhoto(true);
+                try {
+                  const uploaded: string[] = [];
+                  for (const uri of uris.slice(0, 3 - editInquiryPhotos.length)) {
+                    const result = await CloudinaryService.uploadImage(uri, {
+                      folder: 'leads',
+                      tags: ['repair_inquiry', editBrand],
+                    });
+                    if (result.success && result.secureUrl) uploaded.push(result.secureUrl);
+                    else showError('Upload Failed', result.error || 'Could not upload one of the selected photos.');
+                  }
+                  setEditInquiryPhotos(prev => [...prev, ...uploaded].slice(0, 3));
+                } catch (err: any) {
+                  showError('Upload Error', err?.message || 'Network error.');
+                } finally {
+                  setIsUploadingEditInquiryPhoto(false);
+                }
+              }}
               onCapture={async (uri) => {
                 if (!uri) return;
                 if (!CloudinaryService.isConfigured()) {

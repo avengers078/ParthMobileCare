@@ -538,7 +538,7 @@ export class ApiService {
           let billImageUri: string = data.billImageUri || '';
 
           // If customer name, bill or inspection photos are stored in KYC subcollection, resolve them
-          if (!customerName || !billImageUri || deviceInspectionPhotos.length === 0) {
+          if (!customerName || !billImageUri || deviceInspectionPhotos.length === 0 || data.hasSensitiveKyc) {
             try {
               const kycSnap = await getDoc(doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, d.id, 'kyc_sensitive', 'record'));
               if (kycSnap.exists()) {
@@ -557,9 +557,30 @@ export class ApiService {
                     // Ignore JSON parse error
                   }
                 }
+
+                // Merge ALL KYC fields into the purchase object so detail modals have them
+                return {
+                  ...data,
+                  id: d.id,
+                  customerName: customerName || (data.hasSensitiveKyc ? 'Verified Seller (KYC)' : 'Name unavailable'),
+                  phone: phone || '—',
+                  deviceInspectionPhotos,
+                  devicePhotos: deviceInspectionPhotos,
+                  billImageUri,
+                  // KYC fields for detail modals
+                  aadhaarNumber: kycData.aadhaarNumber || data.aadhaarNumber,
+                  rawAadhaarNumber: kycData.rawAadhaarNumber || kycData.aadhaarNumber || data.rawAadhaarNumber,
+                  aadhaarFrontUri: kycData.aadhaarFrontUri || kycData.aadhaarPhotoFront || kycData.aadhaarCardPhotoUri || data.aadhaarFrontUri,
+                  aadhaarBackUri: kycData.aadhaarBackUri || kycData.aadhaarPhotoBack || data.aadhaarBackUri,
+                  aadhaarFrontPublicId: kycData.aadhaarFrontPublicId || data.aadhaarFrontPublicId,
+                  aadhaarBackPublicId: kycData.aadhaarBackPublicId || data.aadhaarBackPublicId,
+                  address: kycData.address || data.address,
+                  alternatePhone: kycData.alternatePhone || data.alternatePhone,
+                  kyc: kycData as SecondHandKycRecord,
+                } as SecondHandPurchase;
               }
-            } catch {
-              // Ignore subcollection read error
+            } catch (kycErr: any) {
+              console.error('[AdminApi] Failed to fetch purchase KYC for', d.id, ':', kycErr?.code || kycErr?.message || kycErr);
             }
           }
 
@@ -582,11 +603,19 @@ export class ApiService {
     try {
       const snap = await getDoc(doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, purchaseId, 'kyc_sensitive', 'record'));
       if (snap.exists()) {
-        return snap.data() as SecondHandKycRecord;
+        const data = snap.data();
+        return {
+          ...data,
+          aadhaarNumber: data.aadhaarNumber || data.rawAadhaarNumber || data.sellerAadhaarNumber || data.aadhaarNo || '',
+          rawAadhaarNumber: data.rawAadhaarNumber || data.aadhaarNumber || data.sellerAadhaarNumber || data.aadhaarNo || '',
+          aadhaarFrontUri: data.aadhaarFrontUri || data.aadhaarPhotoFront || data.aadhaarCardPhotoUri || data.aadhaarFrontImageUrl || '',
+          aadhaarBackUri: data.aadhaarBackUri || data.aadhaarPhotoBack || data.aadhaarBackImageUrl || '',
+        } as SecondHandKycRecord;
       }
+      console.warn('[AdminApi] KYC subcollection document does not exist for purchase:', purchaseId);
       return null;
-    } catch (e) {
-      console.warn('[AdminApi] Failed to fetch KYC record:', e);
+    } catch (e: any) {
+      console.error('[AdminApi] FAILED to fetch KYC record for purchase:', purchaseId, '- Error:', e?.code || e?.message || e);
       return null;
     }
   }
@@ -693,7 +722,37 @@ export class ApiService {
     return this.cachedFetch('sales', 30000, forceRefresh, async () => {
       const q = query(collection(db, FIRESTORE_COLLECTIONS.SECOND_HAND_SALES), orderBy('saleDate', 'desc'));
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ ...d.data(), id: d.id } as SecondHandSale));
+      const sales = await Promise.all(
+        snap.docs.map(async d => {
+          const data = d.data();
+
+          // If this sale has sensitive KYC, resolve it into the sale object
+          if (data.hasSensitiveKyc) {
+            try {
+              const kycSnap = await getDoc(doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, d.id, 'kyc_sensitive', 'record'));
+              if (kycSnap.exists()) {
+                const kycData = kycSnap.data();
+                return {
+                  ...data,
+                  id: d.id,
+                  aadhaarNumber: kycData.aadhaarNumber || data.aadhaarNumber,
+                  rawAadhaarNumber: kycData.rawAadhaarNumber || kycData.aadhaarNumber || data.rawAadhaarNumber,
+                  aadhaarPhotoUri: kycData.aadhaarPhotoUri || data.aadhaarPhotoUri,
+                  aadhaarPhotoPublicId: kycData.aadhaarPhotoPublicId || data.aadhaarPhotoPublicId,
+                  buyerPhotoUri: kycData.buyerPhotoUri || data.buyerPhotoUri,
+                  alternatePhone: kycData.alternatePhone || data.alternatePhone,
+                  kyc: kycData as SecondHandSaleKycRecord,
+                } as SecondHandSale;
+              }
+            } catch (kycErr: any) {
+              console.error('[AdminApi] Failed to fetch sale KYC for', d.id, ':', kycErr?.code || kycErr?.message || kycErr);
+            }
+          }
+
+          return { ...data, id: d.id } as SecondHandSale;
+        })
+      );
+      return sales;
     });
   }
 
@@ -701,11 +760,19 @@ export class ApiService {
     try {
       const snap = await getDoc(doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_SALES, saleId, 'kyc_sensitive', 'record'));
       if (snap.exists()) {
-        return snap.data() as SecondHandSaleKycRecord;
+        const data = snap.data();
+        return {
+          ...data,
+          aadhaarNumber: data.aadhaarNumber || data.rawAadhaarNumber || data.buyerAadhaarNumber || data.aadhaarNo || '',
+          rawAadhaarNumber: data.rawAadhaarNumber || data.aadhaarNumber || data.buyerAadhaarNumber || data.aadhaarNo || '',
+          aadhaarPhotoUri: data.aadhaarPhotoUri || data.buyerAadhaarPhotoUri || data.aadhaarFrontUri || data.aadhaarPhotoFront || '',
+          aadhaarPhotoPublicId: data.aadhaarPhotoPublicId || data.aadhaarFrontPublicId || '',
+        } as SecondHandSaleKycRecord;
       }
+      console.warn('[AdminApi] KYC subcollection document does not exist for sale:', saleId);
       return null;
-    } catch (e) {
-      console.warn('[AdminApi] Failed to fetch Sale KYC record:', e);
+    } catch (e: any) {
+      console.error('[AdminApi] FAILED to fetch KYC record for sale:', saleId, '- Error:', e?.code || e?.message || e);
       return null;
     }
   }
@@ -729,11 +796,12 @@ export class ApiService {
             let deviceInspectionPhotos: string[] = data.deviceInspectionPhotos || data.devicePhotos || [];
             let billImageUri: string = data.billImageUri || '';
 
-            if (!customerName || !billImageUri || deviceInspectionPhotos.length === 0) {
+            let kycData: Record<string, any> | null = null;
+            if (!customerName || !billImageUri || deviceInspectionPhotos.length === 0 || data.hasSensitiveKyc) {
               try {
                 const kycSnap = await getDoc(doc(db, FIRESTORE_COLLECTIONS.SECOND_HAND_PURCHASES, d.id, 'kyc_sensitive', 'record'));
                 if (kycSnap.exists()) {
-                  const kycData = kycSnap.data();
+                  kycData = kycSnap.data();
                   if (!customerName) customerName = kycData.customerName || kycData.sellerName || '';
                   if (!phone) phone = kycData.phone || '';
                   if (!billImageUri) billImageUri = kycData.billImageUri || '';
@@ -758,6 +826,17 @@ export class ApiService {
               deviceInspectionPhotos,
               devicePhotos: deviceInspectionPhotos,
               billImageUri,
+              ...(kycData ? {
+                aadhaarNumber: kycData.aadhaarNumber || kycData.rawAadhaarNumber || kycData.sellerAadhaarNumber || kycData.aadhaarNo || data.aadhaarNumber,
+                rawAadhaarNumber: kycData.rawAadhaarNumber || kycData.aadhaarNumber || kycData.sellerAadhaarNumber || kycData.aadhaarNo || data.rawAadhaarNumber,
+                aadhaarFrontUri: kycData.aadhaarFrontUri || kycData.aadhaarPhotoFront || kycData.aadhaarCardPhotoUri || kycData.aadhaarFrontImageUrl || data.aadhaarFrontUri,
+                aadhaarBackUri: kycData.aadhaarBackUri || kycData.aadhaarPhotoBack || kycData.aadhaarBackImageUrl || data.aadhaarBackUri,
+                aadhaarFrontPublicId: kycData.aadhaarFrontPublicId || data.aadhaarFrontPublicId,
+                aadhaarBackPublicId: kycData.aadhaarBackPublicId || data.aadhaarBackPublicId,
+                address: kycData.address || data.address,
+                alternatePhone: kycData.alternatePhone || data.alternatePhone,
+                kyc: kycData as SecondHandKycRecord,
+              } : {}),
             } as SecondHandPurchase;
           })
         );

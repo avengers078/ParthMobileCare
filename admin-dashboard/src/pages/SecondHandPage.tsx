@@ -1171,7 +1171,9 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
                   )}
                 </div>
                 <span className="text-[10px] font-semibold text-emerald-600">
-                  Verified Seller KYC • Cloudinary Stored
+                  {viewPurchaseKyc?.aadhaarNumber || viewPurchaseKyc?.rawAadhaarNumber || viewPurchaseKyc?.aadhaarFrontUri || viewPurchaseKyc?.aadhaarBackUri
+                    ? 'Seller KYC record loaded from Firebase'
+                    : 'Seller KYC record or Aadhaar details unavailable in Firebase'}
                 </span>
               </div>
             </div>
@@ -1414,7 +1416,9 @@ export const SecondHandPage: React.FC<SecondHandPageProps> = ({ initialParams, o
                       Buyer KYC & Aadhaar Verification
                     </span>
                     <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                      Cloudinary Stored • Firebase Indexed
+                      {viewSaleKyc?.aadhaarNumber || viewSaleKyc?.rawAadhaarNumber || viewSaleKyc?.aadhaarPhotoUri
+                        ? 'Buyer KYC record loaded from Firebase'
+                        : 'Buyer KYC record or Aadhaar details unavailable in Firebase'}
                     </span>
                   </div>
 

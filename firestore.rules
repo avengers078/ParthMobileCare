@@ -993,14 +993,34 @@ match /users/{userId} {
       // Staff can only create KYC if they recorded the parent purchase, and parent purchase exists.
       match /kyc_sensitive/{kycId} {
         allow read: if isAdmin();
-        allow create: if isAuthenticated() && isValidSecondHandKyc(request.resource.data) && (
-          (
-            request.resource.data.recordedByStaffId == request.auth.uid &&
+        allow create: if isAuthenticated() &&
+          request.resource.data.keys().hasOnly([
+            'id', 'purchaseId', 'customerName', 'phone', 'alternatePhone', 'address',
+            'aadhaarNumber', 'rawAadhaarNumber', 'aadhaarFrontUri', 'aadhaarBackUri', 'aadhaarPhotoFront',
+            'aadhaarPhotoBack', 'aadhaarCardPhotoUri', 'customerPhotoUri', 'billImageUri',
+            'digitalSignatureUri', 'createdAt', 'recordedAt', 'recordedByStaffId',
+            'recordedByStaffName', '_syncedAt', 'aadhaarFrontPublicId', 'aadhaarBackPublicId'
+          ]) &&
+          request.resource.data.keys().hasAll([
+            'id', 'purchaseId', 'customerName', 'phone', 'address', 'aadhaarNumber',
+            'recordedByStaffId', 'recordedByStaffName'
+          ]) &&
+          request.resource.data.id is string &&
+          request.resource.data.purchaseId is string &&
+          request.resource.data.customerName is string &&
+          request.resource.data.phone is string &&
+          request.resource.data.address is string &&
+          request.resource.data.aadhaarNumber is string &&
+          request.resource.data.recordedByStaffId is string &&
+          request.resource.data.recordedByStaffName is string &&
+          request.resource.data.id == kycId && (
+          isAdmin() || (
+            kycId == 'record' &&
             request.resource.data.purchaseId == purchaseId &&
+            request.resource.data.recordedByStaffId == request.auth.uid &&
             exists(/databases/$(database)/documents/second_hand_purchases/$(purchaseId)) &&
             get(/databases/$(database)/documents/second_hand_purchases/$(purchaseId)).data.purchasedByStaffId == request.auth.uid
-          ) ||
-          isAdmin()
+          )
         );
         allow update, delete: if isAdmin();
       }
@@ -1028,15 +1048,34 @@ match /users/{userId} {
       // Staff can create ONLY if parent sale exists and was sold by this authenticated staff member.
       match /kyc_sensitive/{kycId} {
         allow read: if isAdmin();
-        allow create: if isAuthenticated() && isValidSecondHandSaleKyc(request.resource.data) && (
-          (
-            request.resource.data.recordedByStaffId == request.auth.uid &&
-            request.resource.data.saleId == saleId &&
-            exists(/databases/$(database)/documents/second_hand_sales/$(saleId)) &&
-            get(/databases/$(database)/documents/second_hand_sales/$(saleId)).data.soldByStaffId == request.auth.uid
-          ) ||
-          isAdmin()
-        );
+        allow create: if isAuthenticated() &&
+          request.resource.data.keys().hasOnly([
+            'id', 'saleId', 'buyerName', 'phone', 'alternatePhone', 'address',
+            'aadhaarNumber', 'rawAadhaarNumber', 'aadhaarPhotoUri', 'buyerPhotoUri',
+            'digitalSignatureUri', 'recordedByStaffId', 'recordedByStaffName',
+            'recordedAt', 'createdAt', '_syncedAt', 'aadhaarPhotoPublicId'
+          ]) &&
+          request.resource.data.keys().hasAll([
+            'id', 'saleId', 'buyerName', 'phone', 'address', 'aadhaarNumber',
+            'recordedByStaffId', 'recordedByStaffName'
+          ]) &&
+          request.resource.data.id is string &&
+          request.resource.data.saleId is string &&
+          request.resource.data.buyerName is string &&
+          request.resource.data.phone is string &&
+          request.resource.data.address is string &&
+          request.resource.data.aadhaarNumber is string &&
+          request.resource.data.recordedByStaffId is string &&
+          request.resource.data.recordedByStaffName is string &&
+          request.resource.data.id == kycId && (
+            isAdmin() || (
+              kycId == 'record' &&
+              request.resource.data.saleId == saleId &&
+              request.resource.data.recordedByStaffId == request.auth.uid &&
+              exists(/databases/$(database)/documents/second_hand_sales/$(saleId)) &&
+              get(/databases/$(database)/documents/second_hand_sales/$(saleId)).data.soldByStaffId == request.auth.uid
+            )
+          );
         allow update, delete: if isAdmin();
       }
     }

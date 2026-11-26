@@ -24,6 +24,8 @@ interface DocumentCaptureProps {
   hint?: string;
   currentUri?: string;
   onCapture: (uri: string) => void;
+  onCaptureMany?: (uris: string[]) => void;
+  maxSelection?: number;
   required?: boolean;
   errorMessage?: string;
 }
@@ -33,6 +35,8 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
   hint,
   currentUri,
   onCapture,
+  onCaptureMany,
+  maxSelection = 1,
   required = false,
   errorMessage,
 }) => {
@@ -194,7 +198,7 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
       maxHeight: 1600,
       maxWidth: 1600,
       quality: 0.8,
-      selectionLimit: 1,
+      selectionLimit: Math.max(1, maxSelection),
     };
 
     setIsLoading(true);
@@ -213,10 +217,14 @@ export const DocumentCapture: React.FC<DocumentCaptureProps> = ({
         return;
       }
 
-      if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
-        const selectedUri = response.assets[0].uri;
-        setPhotoUri(selectedUri);
-        onCapture(selectedUri);
+      const selectedUris = response.assets?.map(asset => asset.uri).filter((uri): uri is string => !!uri) || [];
+      if (selectedUris.length > 0) {
+        setPhotoUri(selectedUris[0]);
+        if (onCaptureMany && selectedUris.length > 1) {
+          onCaptureMany(selectedUris.slice(0, Math.max(1, maxSelection)));
+        } else {
+          onCapture(selectedUris[0]);
+        }
       }
     } catch (error: any) {
       showError('Gallery Error', error?.message || 'Failed to select image from gallery.');
